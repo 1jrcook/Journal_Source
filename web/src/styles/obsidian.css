@@ -330,25 +330,76 @@ html[data-jr-glass="1"] .theme-dark {
 }
 html[data-jr-glass="1"] .app,
 html[data-jr-glass="1"] .login-screen { background: transparent !important; }
+/* Chrome stays a light glass. The writing surface is its own darker field,
+   so the note is not one blur of the scene. */
 html[data-jr-glass="1"] .ribbon,
 html[data-jr-glass="1"] .sidebar,
-html[data-jr-glass="1"] .right-sidebar,
-html[data-jr-glass="1"] .workspace {
-  background: color-mix(in srgb, var(--jr-surface, #fff) var(--jr-pane, 58%), transparent) !important;
-  backdrop-filter: blur(var(--jr-blur, 22px)) saturate(1.25);
-  -webkit-backdrop-filter: blur(var(--jr-blur, 22px)) saturate(1.25);
+html[data-jr-glass="1"] .right-sidebar {
+  background: color-mix(in srgb, var(--jr-chrome, #101218) 84%, transparent) !important;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
+html[data-jr-glass="1"] .workspace,
+html[data-jr-glass="1"] .editor-area,
+html[data-jr-glass="1"] .pane,
+html[data-jr-glass="1"] .cm-scroller,
+html[data-jr-glass="1"] .cm-gutters {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 html[data-jr-glass="1"] .cm-editor,
-html[data-jr-glass="1"] .cm-scroller,
-html[data-jr-glass="1"] .cm-gutters,
-html[data-jr-glass="1"] .markdown-preview,
+html[data-jr-glass="1"] .markdown-preview {
+  background: color-mix(in srgb, var(--jr-field-bg, #0b0c10) var(--jr-field, 90%), transparent) !important;
+  color: var(--jr-ink, #f4f1ea) !important;
+  caret-color: var(--jr-ink, #f4f1ea);
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), inset 0 0 0 1px rgba(255,255,255,.07);
+}
 html[data-jr-glass="1"] .tab-bar,
 html[data-jr-glass="1"] .view-header,
 html[data-jr-glass="1"] .format-toolbar,
-html[data-jr-glass="1"] .vault-footer,
-html[data-jr-glass="1"] .editor-area,
-html[data-jr-glass="1"] .pane,
-html[data-jr-glass="1"] .status-bar { background: transparent !important; }
+html[data-jr-glass="1"] .status-bar,
+html[data-jr-glass="1"] .vault-footer {
+  background: color-mix(in srgb, var(--jr-chrome, #12141a) 92%, transparent) !important;
+  color: var(--jr-ink-2, #ddd6c8);
+}
+html[data-jr-glass="1"] .tree-row,
+html[data-jr-glass="1"] .ribbon button:not(.active),
+html[data-jr-glass="1"] .nav-action:not(.active),
+html[data-jr-glass="1"] .tool-btn:not(.active),
+html[data-jr-glass="1"] .seg button:not(.active),
+html[data-jr-glass="1"] .tab:not(.active),
+html[data-jr-glass="1"] .view-header .crumbs,
+html[data-jr-glass="1"] .status-bar {
+  color: var(--jr-ink-2, #ddd6c8);
+}
+html[data-jr-glass="1"] .nav-title,
+html[data-jr-glass="1"] .tree-row.active,
+html[data-jr-glass="1"] .tree-row:hover,
+html[data-jr-glass="1"] .format-toolbar button,
+html[data-jr-glass="1"] .cm-content,
+html[data-jr-glass="1"] .cm-line {
+  color: var(--jr-ink, #f4f1ea);
+}
+html[data-jr-glass="1"] .ribbon button:hover,
+html[data-jr-glass="1"] .nav-action:hover,
+html[data-jr-glass="1"] .format-toolbar button:hover,
+html[data-jr-glass="1"] .tool-btn:hover {
+  color: var(--jr-ink, #f4f1ea);
+  background: rgba(255,255,255,.1);
+}
+html[data-jr-glass="1"] .theme-light .cm-editor,
+html[data-jr-glass="1"] .theme-light .markdown-preview {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), inset 0 0 0 1px rgba(40,32,18,.1);
+}
+html[data-jr-glass="1"] .theme-light .ribbon button:hover,
+html[data-jr-glass="1"] .theme-light .nav-action:hover,
+html[data-jr-glass="1"] .theme-light .format-toolbar button:hover,
+html[data-jr-glass="1"] .theme-light .tool-btn:hover {
+  background: rgba(0,0,0,.06);
+}
 html[data-jr-glass="1"] .login-card,
 html[data-jr-glass="1"] .modal {
   background: color-mix(in srgb, var(--jr-surface, #fff) 86%, transparent) !important;

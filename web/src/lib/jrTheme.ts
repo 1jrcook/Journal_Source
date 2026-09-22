@@ -106,9 +106,9 @@ function paint(pack: JrPack) {
   const glass = pack.glass === "off" || pack.glass === "light" || pack.glass === "heavy" ? pack.glass : "off";
   const photo = safePhoto(String(pack.photo || ""));
   const frosted = Boolean(photo) && glass !== "off";
-  const text = light ? "#1a1814" : "#e2e2e2";
-  const text2 = light ? "#5c574f" : "#888888";
-  const text3 = light ? "#8a847c" : "#555555";
+  const text = light ? "#1a1814" : frosted ? "#f4f1ea" : "#e2e2e2";
+  const text2 = light ? (frosted ? "#3c3830" : "#5c574f") : frosted ? "#ddd6c8" : "#888888";
+  const text3 = light ? (frosted ? "#5e584e" : "#8a847c") : frosted ? "#c8c0b2" : "#555555";
   const border = light ? "#e4ddd0" : "#2c2c2c";
   const surface = light ? "#ffffff" : "#111111";
   const hsl = hexHsl(accent);
@@ -120,6 +120,11 @@ function paint(pack: JrPack) {
   rootEl.style.setProperty("--jr-photo", photo ? `url("${photo.replace(/"/g, "")}")` : "none");
   rootEl.style.setProperty("--jr-blur", frosted ? blur : "0px");
   rootEl.style.setProperty("--jr-pane", pane);
+  rootEl.style.setProperty("--jr-chrome", light ? "#f7f4ee" : "#101218");
+  rootEl.style.setProperty("--jr-field-bg", light ? "#fbfaf6" : "#0b0c10");
+  rootEl.style.setProperty("--jr-field", frosted ? (light ? "86%" : "90%") : "100%");
+  rootEl.style.setProperty("--jr-ink", text);
+  rootEl.style.setProperty("--jr-ink-2", text2);
   rootEl.dataset.jrGlass = frosted ? "1" : "0";
   rootEl.style.colorScheme = light ? "light" : "dark";
   ensureVideo(frosted ? sceneVideo(photo) : "");
@@ -195,9 +200,11 @@ if (typeof window !== "undefined") {
     __jrApplyShellTheme?: (pack: JrPack) => void;
     __jrThemePack?: JrPack;
   };
+  const prev = w.__jrApplyShellTheme;
   w.__jrApplyShellTheme = (pack: JrPack) => {
     markJrPane();
     applyJrPack(pack);
+    if (typeof prev === "function" && prev !== w.__jrApplyShellTheme) prev(pack);
   };
   if (w.__jrThemePack) w.__jrApplyShellTheme(w.__jrThemePack);
 }
