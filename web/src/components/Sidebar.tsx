@@ -17,6 +17,7 @@ const TITLES: Record<string, string> = {
 export default function Sidebar() {
   const leftPanel = useStore((s) => s.leftPanel);
   const newNote = useStore((s) => s.newNote);
+  const setNotesSettings = useStore((s) => s.setNotesSettings);
   const newCanvas = useStore((s) => s.newCanvas);
   const newFolder = useStore((s) => s.newFolder);
   const setSettings = useStore((s) => s.setSettings);
@@ -100,6 +101,9 @@ export default function Sidebar() {
             </button>
             <button className="nav-action" title="New folder" onClick={() => newFolder()}>
               <Icon name="folder-plus" size={16} />
+            </button>
+            <button className="nav-action" title="Templates and periodic notes" onClick={() => setNotesSettings(true)}>
+              <Icon name="library" size={16} />
             </button>
             <button className="nav-action" title="Change sort order" onClick={openSortMenu}>
               <Icon name="arrow-up-narrow-wide" size={16} />

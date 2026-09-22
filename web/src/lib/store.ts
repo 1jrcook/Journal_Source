@@ -3,10 +3,13 @@ import { api, type TreeNode, type ShareRecord } from './api';
 import { findNode } from './tree';
 import { getActiveEditor } from './activeEditor';
 import {
-  dailyNotePath,
   expandTemplate,
   loadTemplateSettings,
+  periodicNotePath,
+  PERIOD_LABEL,
   rememberDailyTemplate,
+  templateForNewNote,
+  type Period,
 } from './templates';
 
 /** Per-tab id so we can ignore the echo of our own server-pushed state change. */
@@ -231,9 +234,16 @@ interface AppState {
   dialog: DialogState | null;
   ask: (spec: DialogSpec) => Promise<string | null>;
   openDailyNote: (templatePath?: string) => Promise<void>;
+  openPeriodic: (period: Period, templatePath?: string) => Promise<void>;
   /** 'insert' puts a template at the cursor. 'daily' makes today's note from one. */
   templatePicker: 'insert' | 'daily' | null;
   setTemplatePicker: (mode: 'insert' | 'daily' | null) => void;
+  notesSettingsOpen: boolean;
+  /** Folder to pre-select when assigning a folder template. */
+  notesSettingsFolder: string | null;
+  setNotesSettings: (open: boolean, folder?: string | null) => void;
+  /** New folder that should ask for a template once its name is committed. */
+  templatePromptPath: string | null;
   insertTemplate: (path: string) => Promise<void>;
   useTemplateAsDaily: (path: string) => Promise<void>;
   /** Re-fetch content for the active/split tabs (after reload or remote sync). */
@@ -574,7 +584,24 @@ export const useStore = create<AppState>()(
         let name = 'Untitled.md';
         for (let i = 1; taken.has(name.toLowerCase()); i++) name = `Untitled ${i}.md`;
         const path = base ? `${base}/${name}` : name;
-        await get().createNote(path, '');
+        let body = '';
+        try {
+          const settings = await loadTemplateSettings(get().tree);
+          const tpl = templateForNewNote(settings, base);
+          if (tpl) {
+            const r = await api.read(tpl);
+            const raw = typeof r === 'string' ? r : r.content;
+            const title = name.replace(/\.(md|markdown)$/i, '');
+            body = expandTemplate(raw, {
+              title,
+              dateFormat: settings.dateFormat,
+              timeFormat: settings.timeFormat,
+            });
+          }
+        } catch {
+          body = '';
+        }
+        await get().createNote(path, body);
         if (base) get().revealInTree(path);
       },
 
@@ -650,11 +677,18 @@ export const useStore = create<AppState>()(
           for (const s of segs) { acc = acc ? `${acc}/${s}` : s; ancestors.push(acc); }
           set((st) => ({ expanded: Array.from(new Set([...st.expanded, ...ancestors])) }));
         }
-        set({ leftPanel: 'files', leftOpen: true, renamingPath: path });
+        set({ leftPanel: 'files', leftOpen: true, renamingPath: path, templatePromptPath: path });
       },
 
       templatePicker: null,
       setTemplatePicker: (mode) => set({ templatePicker: mode }),
+      notesSettingsOpen: false,
+      notesSettingsFolder: null,
+      templatePromptPath: null,
+      setNotesSettings: (open, folder = null) => set({
+        notesSettingsOpen: open,
+        notesSettingsFolder: open ? (folder ?? null) : null,
+      }),
 
       insertTemplate: async (templatePath) => {
         const { activePath, content } = get();
@@ -693,29 +727,42 @@ export const useStore = create<AppState>()(
       },
 
       useTemplateAsDaily: async (templatePath) => {
-        const settings = await loadTemplateSettings(get().tree);
-        try {
-          await rememberDailyTemplate(templatePath, settings);
-        } catch {
-          /* the note still gets created from this template below */
-        }
-        await get().openDailyNote(templatePath);
+        await get().openPeriodic('daily', templatePath);
       },
 
       openDailyNote: async (templatePath?: string) => {
+        await get().openPeriodic('daily', templatePath);
+      },
+
+      openPeriodic: async (period, templatePath) => {
         const settings = await loadTemplateSettings(get().tree);
-        const chosen = templatePath || settings.dailyTemplate;
-        const path = dailyNotePath(settings);
+        const spec = settings.periodic[period];
+        const label = PERIOD_LABEL[period];
+        if (templatePath && period === 'daily') {
+          spec.template = templatePath;
+          spec.enabled = true;
+          try {
+            await rememberDailyTemplate(templatePath, settings);
+          } catch {
+            /* the note still gets created from this template below */
+          }
+        }
+        if (!spec.enabled) {
+          get().notify(`${label} notes are off. Turn them on under Templates.`);
+          return;
+        }
+        const path = periodicNotePath(settings, period);
         const title = (path.split('/').pop() ?? path).replace(/\.md$/i, '');
         try {
           await api.read(path);
           await get().openFile(path);
-          if (templatePath) get().notify(`Today's note is already there`);
+          if (templatePath) get().notify(`That ${label.toLowerCase()} note is already there`);
           return;
         } catch {
           /* create it */
         }
         let body = `# ${title}\n\n`;
+        const chosen = (period === 'daily' ? templatePath : '') || spec.template;
         if (chosen) {
           try {
             const r = await api.read(chosen);
@@ -727,11 +774,11 @@ export const useStore = create<AppState>()(
             });
             if (!body.endsWith('\n')) body += '\n';
           } catch {
-            get().notify('Daily template missing. Started a blank daily note');
+            get().notify(`${label} template missing. Started a blank note`);
           }
         }
         await get().createNote(path, body);
-        get().notify(`Daily note ${title} ready`);
+        get().notify(`${label} note ${title} ready`);
       },
 
       hydrate: async () => {

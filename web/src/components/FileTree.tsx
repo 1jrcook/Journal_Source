@@ -26,18 +26,28 @@ function RenameInput({ node, onDone }: { node: TreeNode; onDone: () => void }) {
     if (done.current) return;
     done.current = true;
     const name = (ref.current?.value ?? '').trim();
+    const prompted = useStore.getState().templatePromptPath === node.path;
     onDone();
-    if (!commit || !name || name === node.name) return;
+    let finalPath = node.path;
     const dir = parentDir(node.path);
-    const to = dir ? `${dir}/${name}` : name;
-    if (to === node.path) return;
-    try {
-      await api.rename(node.path, to);
-      closeTab(node.path);
-    } catch (e: any) {
-      notify(e?.message ?? 'Rename failed');
+    const renamed = commit && !!name && name !== node.name;
+    if (renamed) {
+      finalPath = dir ? `${dir}/${name}` : name;
+      if (finalPath !== node.path) {
+        try {
+          await api.rename(node.path, finalPath);
+          closeTab(node.path);
+        } catch (e: any) {
+          notify(e?.message ?? 'Rename failed');
+          finalPath = node.path;
+        }
+      }
     }
-    await loadTree();
+    if (renamed) await loadTree();
+    if (prompted && node.type === 'folder') {
+      useStore.setState({ templatePromptPath: null });
+      if (commit) useStore.getState().setNotesSettings(true, finalPath);
+    }
   };
 
   return (
@@ -146,6 +156,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
   const newNote = useStore((s) => s.newNote);
   const newCanvas = useStore((s) => s.newCanvas);
   const newFolder = useStore((s) => s.newFolder);
+  const setNotesSettings = useStore((s) => s.setNotesSettings);
   const renamingPath = useStore((s) => s.renamingPath);
   const setRenamingPath = useStore((s) => s.setRenamingPath);
   const toggleBookmark = useStore((s) => s.toggleBookmark);
@@ -312,6 +323,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
           { label: 'New note', onClick: () => newNote(node.path) },
           { label: 'New canvas', onClick: () => newCanvas(node.path) },
           { label: 'New folder', onClick: () => newFolder(node.path) },
+          { label: 'Template for new notes…', onClick: () => setNotesSettings(true, node.path) },
           { label: '', separator: true },
           { label: 'Copy', onClick: doClipboard('copy') },
           { label: 'Cut', onClick: doClipboard('cut') },

@@ -25,6 +25,7 @@ import { pluginsRouter } from './routes/plugins.js';
 import { agentRouter } from './routes/agent.js';
 import { uiStateRouter } from './routes/uistate.js';
 import { sharesRouter, publicSharesRouter } from './routes/shares.js';
+import { notesConfigRouter } from './routes/notesconfig.js';
 import { sharePageRouter } from './routes/sharepage.js';
 import { initSearch, qmd } from './services/search.js';
 import { buildLinkGraph, updateLinkGraphForFile } from './services/links.js';
@@ -145,6 +146,7 @@ async function main() {
   app.use('/api/plugins', pluginsRouter);
   app.use('/api/uistate', uiStateRouter);
   app.use('/api/shares', sharesRouter); // manage public share links (auth)
+  app.use('/api/notes-config', notesConfigRouter);
   app.use('/public/shares', publicSharesRouter); // shared-note content (NO auth)
   app.use('/share', sharePageRouter); // SSR public share page (NO auth, SEO/OG meta)
   app.use('/api', searchRouter); // /api/search, /api/tags, /api/backlinks, /api/graph...

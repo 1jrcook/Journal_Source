@@ -10,6 +10,7 @@ import { updateLinkGraphForFile } from '../services/links.js';
 import { scheduleAutoCommitOnSave } from '../services/git.js';
 import { resolveFile } from '../services/fileindex.js';
 import { onFileRenamed } from '../services/shares.js';
+import { retargetNoteConfig } from '../services/notesconfig.js';
 import { mimeFor } from '../services/mime.js';
 import { sendFileWithRange } from '../services/httpfile.js';
 
@@ -117,6 +118,7 @@ filesRouter.patch(
     await vault.rename(from, to);
     await qmd.rename(from, to);
     await onFileRenamed(from, to).catch(() => {}); // keep public share links pointing at the note
+    await retargetNoteConfig(from, to).catch(() => {});
     reindex({ added: to, removed: from });
     res.json({ ok: true, from, to });
   }),

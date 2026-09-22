@@ -16,6 +16,7 @@ import ContextMenu from './components/ContextMenu';
 import AskDialog from './components/AskDialog';
 import FolderPicker from './components/FolderPicker';
 import TemplatePicker from './components/TemplatePicker';
+import NotesSettings from './components/NotesSettings';
 import { loadPlugins } from './lib/plugins';
 import { initUrlSync } from './lib/urlsync';
 import { useIsMobile } from './lib/useIsMobile';
@@ -235,6 +236,7 @@ export default function App() {
       <AskDialog />
       <FolderPicker />
       <TemplatePicker />
+      <NotesSettings />
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

@@ -1132,6 +1132,18 @@ input.cm-inline-title {
 
 /* Settings */
 .settings-modal { width: 900px; height: 72vh; max-height: 760px; }
+.notes-modal { width: min(980px, 96vw); max-height: 86vh; display: flex; flex-direction: column; padding: 0; }
+.notes-head, .notes-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+.notes-head h2 { margin: 0; font-size: 16px; }
+.notes-body { overflow: auto; padding: 0 16px 12px; }
+.notes-body h3 { margin: 16px 0 4px; font-size: 14px; }
+.notes-hint { color: var(--text-muted); font-size: 12px; margin: 0 0 8px; }
+.notes-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; margin: 8px 0 4px; }
+.notes-field .text-input { width: 100%; }
+.period-grid { display: grid; grid-template-columns: 92px 36px minmax(120px, 1fr) minmax(140px, 1.2fr) minmax(140px, 1.3fr); gap: 6px; align-items: center; margin: 4px 0; }
+.period-head { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.folder-template-row { grid-template-columns: minmax(160px, 1.4fr) minmax(160px, 1.4fr) auto; }
+.period-grid .text-input { width: 100%; box-sizing: border-box; }
 .settings-layout { display: flex; height: 100%; }
 .settings-nav { width: 210px; background: var(--bg-secondary); border-right: 1px solid var(--bg-modifier-border); padding: 12px 8px; }
 .settings-nav button { display: block; width: 100%; text-align: left; padding: 7px 12px; background: transparent; border: 0;
@@ -1363,11 +1375,13 @@ input.cm-inline-title {
 
   /* ---- Full-screen modals so nothing is cut off at the right/bottom edge. ---- */
   /* position:fixed pulls them out of the centered/padded modal backdrop. */
-  .settings-modal, .version-history {
+  .settings-modal, .version-history, .notes-modal {
     position: fixed; inset: 0;
     width: 100%; max-width: none; height: 100dvh; max-height: none;
     border: 0; border-radius: 0;
   }
+  .period-grid, .folder-template-row { grid-template-columns: 1fr; }
+  .period-head { display: none; }
   /* Settings: nav becomes a horizontal scroll strip above the content. */
   .settings-layout { flex-direction: column; min-height: 0; }
   .settings-nav {

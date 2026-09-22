@@ -10,7 +10,9 @@ export default function Ribbon() {
   const setGraph = useStore((s) => s.setGraph);
   const setSettings = useStore((s) => s.setSettings);
   const setPalette = useStore((s) => s.setPalette);
-  const openDailyNote = useStore((s) => s.openDailyNote);
+  const openPeriodic = useStore((s) => s.openPeriodic);
+  const openContextMenu = useStore((s) => s.openContextMenu);
+  const setNotesSettings = useStore((s) => s.setNotesSettings);
   const notify = useStore((s) => s.notify);
   const loadTree = useStore((s) => s.loadTree);
 
@@ -53,8 +55,27 @@ export default function Ribbon() {
       <button className={leftPanel === 'bookmarks' ? 'active' : ''} title="Bookmarks & recent" onClick={() => setLeftPanel('bookmarks')}>
         <Icon name="bookmark" size={18} />
       </button>
-      <button title="Daily note" onClick={() => openDailyNote()}>
+      <button
+        title="Periodic notes"
+        onClick={(e) => {
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          openContextMenu({
+            x: r.right + 6,
+            y: r.top,
+            items: [
+              { label: "Today's daily note", icon: 'calendar', onClick: () => openPeriodic('daily') },
+              { label: "This week's note", onClick: () => openPeriodic('weekly') },
+              { label: "This month's note", onClick: () => openPeriodic('monthly') },
+              { label: "This quarter's note", onClick: () => openPeriodic('quarterly') },
+              { label: "This year's note", onClick: () => openPeriodic('yearly') },
+            ],
+          });
+        }}
+      >
         <Icon name="calendar" size={18} />
+      </button>
+      <button title="Templates and periodic notes" onClick={() => setNotesSettings(true)}>
+        <Icon name="library" size={18} />
       </button>
       <button className={leftPanel === 'tags' ? 'active' : ''} title="Tags" onClick={() => setLeftPanel('tags')}>
         <Icon name="hash" size={18} />

@@ -39,7 +39,9 @@ export default function CommandPalette() {
   const save = useStore((s) => s.save);
   const toggleBookmark = useStore((s) => s.toggleBookmark);
   const openDailyNote = useStore((s) => s.openDailyNote);
+  const openPeriodic = useStore((s) => s.openPeriodic);
   const setTemplatePicker = useStore((s) => s.setTemplatePicker);
+  const setNotesSettings = useStore((s) => s.setNotesSettings);
   const newNote = useStore((s) => s.newNote);
   const newCanvas = useStore((s) => s.newCanvas);
   const notify = useStore((s) => s.notify);
@@ -53,8 +55,13 @@ export default function CommandPalette() {
       { id: 'new', title: 'New note', hint: '⌘N', run: () => newNote() },
       { id: 'new-canvas', title: 'New canvas', run: () => newCanvas() },
       { id: 'daily', title: 'Open today’s daily note', run: () => openDailyNote() },
+      { id: 'weekly', title: 'Open this week’s note', run: () => openPeriodic('weekly') },
+      { id: 'monthly', title: 'Open this month’s note', run: () => openPeriodic('monthly') },
+      { id: 'quarterly', title: 'Open this quarter’s note', run: () => openPeriodic('quarterly') },
+      { id: 'yearly', title: 'Open this year’s note', run: () => openPeriodic('yearly') },
       { id: 'tpl-insert', title: 'Templates: Insert template', run: () => setTemplatePicker('insert') },
       { id: 'tpl-daily', title: 'Templates: New daily note from template', run: () => setTemplatePicker('daily') },
+      { id: 'tpl-settings', title: 'Templates: Set template folder and periodic notes', run: () => setNotesSettings(true) },
       { id: 'save', title: 'Save current file', hint: '⌘S', run: () => save() },
       { id: 'bookmark', title: 'Bookmark current file', run: () => activePath && toggleBookmark(activePath) },
       { id: 'split', title: 'Open current file to the right', run: () => activePath && openToSide(activePath) },
@@ -79,7 +86,7 @@ export default function CommandPalette() {
           }
         } },
     ],
-    [save, setLeftPanel, setGraph, setSettings, setTrash, setViewMode, activePath, toggleBookmark, openToSide, openDailyNote, setTemplatePicker, newNote, newCanvas, notify],
+    [save, setLeftPanel, setGraph, setSettings, setTrash, setViewMode, activePath, toggleBookmark, openToSide, openDailyNote, openPeriodic, setTemplatePicker, setNotesSettings, newNote, newCanvas, notify],
   );
 
   const items = useMemo(() => {
