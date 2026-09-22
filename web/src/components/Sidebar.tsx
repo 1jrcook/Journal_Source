@@ -134,9 +134,11 @@ export default function Sidebar() {
           <Icon name="gem" size={15} /> {vaultName}
         </span>
         <span className="grow" />
-        <button title="Settings" onClick={() => setSettings(true)}>
-          <Icon name="settings" size={16} />
-        </button>
+        {typeof window !== "undefined" && window.parent === window && (
+          <button title="Settings" onClick={() => setSettings(true)}>
+            <Icon name="settings" size={16} />
+          </button>
+        )}
       </div>
       <div className="sidebar-resizer" title="Drag to resize" onPointerDown={onResizeDown} />
     </div>

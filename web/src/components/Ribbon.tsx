@@ -70,9 +70,11 @@ export default function Ribbon({ onTheme }: { onTheme: () => void }) {
       <button title="Toggle theme" onClick={onTheme}>
         <Icon name="moon" size={18} />
       </button>
-      <button title="Settings" onClick={() => setSettings(true)}>
-        <Icon name="settings" size={18} />
-      </button>
+      {typeof window !== "undefined" && window.parent === window && (
+        <button title="Settings" onClick={() => setSettings(true)}>
+          <Icon name="settings" size={18} />
+        </button>
+      )}
     </div>
   );
 }
