@@ -21,6 +21,7 @@ import { loadPlugins } from './lib/plugins';
 import { initUrlSync } from './lib/urlsync';
 import { useIsMobile } from './lib/useIsMobile';
 import { applyJrPack, inJrPane, markJrPane, repaintJr, type JrPack } from './lib/jrTheme';
+import { insertJrStamp } from './lib/stamp';
 
 export default function App() {
   const authed = useStore((s) => s.authed);
@@ -33,6 +34,7 @@ export default function App() {
   const mobileDrawer = useStore((s) => s.mobileDrawer);
   const setMobileDrawer = useStore((s) => s.setMobileDrawer);
   const activePath = useStore((s) => s.activePath);
+  const booksOpen = useStore((s) => s.booksOpen);
   const isMobile = useIsMobile();
   const setPalette = useStore((s) => s.setPalette);
   const save = useStore((s) => s.save);
@@ -61,6 +63,9 @@ export default function App() {
 
   useEffect(() => {
     if (!authed) return;
+    if (location.pathname === '/books' || location.pathname.startsWith('/books/')) {
+      useStore.getState().setBooksOpen(true);
+    }
     loadTree();
     // Deep link (/note/<path>) wins over the restored workspace's active note.
     const deepLink = initUrlSync();
@@ -154,7 +159,21 @@ export default function App() {
       else if (k === '\\') { e.preventDefault(); s.toggleLeft(); }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const onStamp = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (e.key.toLowerCase() !== 't') return;
+      const marked = e as KeyboardEvent & { __jrStamped?: boolean };
+      if (marked.__jrStamped) return;
+      if (!insertJrStamp()) return;
+      marked.__jrStamped = true;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener('keydown', onStamp, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onStamp, true);
+    };
   }, [setPalette, save]);
 
   // Mobile: close the overlay drawer once a note is opened (tap note → read it).
@@ -214,6 +233,7 @@ export default function App() {
     isMobile ? 'mobile' : '',
     isMobile && mobileDrawer === 'left' ? 'drawer-left-open' : '',
     isMobile && mobileDrawer === 'right' ? 'drawer-right-open' : '',
+    booksOpen ? 'books-mode' : '',
   ].filter(Boolean).join(' ');
 
   return (

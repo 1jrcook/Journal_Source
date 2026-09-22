@@ -29,6 +29,8 @@ export default function Ribbon() {
   const setLeftPanel = useStore((s) => s.setLeftPanel);
   const leftPanel = useStore((s) => s.leftPanel);
   const setGraph = useStore((s) => s.setGraph);
+  const booksOpen = useStore((s) => s.booksOpen);
+  const setBooksOpen = useStore((s) => s.setBooksOpen);
   const setSettings = useStore((s) => s.setSettings);
   const setPalette = useStore((s) => s.setPalette);
   const openPeriodic = useStore((s) => s.openPeriodic);
@@ -71,21 +73,23 @@ export default function Ribbon() {
     }));
 
   const items = (): RibbonItem[] => {
+    const leave = (fn: () => void) => () => { setBooksOpen(false); fn(); };
     const list: RibbonItem[] = [
-      { id: 'files', title: 'Files', icon: 'file-text', hideable: true, active: leftPanel === 'files', run: () => setLeftPanel('files') },
-      { id: 'search', title: 'Search', icon: 'search', hideable: true, active: leftPanel === 'search', run: () => setLeftPanel('search') },
-      { id: 'graph', title: 'Graph view', icon: 'graph', hideable: true, run: () => setGraph(true) },
-      { id: 'bookmarks', title: 'Bookmarks', icon: 'bookmark', hideable: true, active: leftPanel === 'bookmarks', run: () => setLeftPanel('bookmarks') },
+      { id: 'files', title: 'Files', icon: 'file-text', hideable: true, active: leftPanel === 'files' && !booksOpen, run: leave(() => setLeftPanel('files')) },
+      { id: 'search', title: 'Search', icon: 'search', hideable: true, active: leftPanel === 'search' && !booksOpen, run: leave(() => setLeftPanel('search')) },
+      { id: 'books', title: 'Books', icon: 'library', hideable: true, active: booksOpen, run: () => setBooksOpen(!booksOpen) },
+      { id: 'graph', title: 'Graph view', icon: 'graph', hideable: true, run: leave(() => setGraph(true)) },
+      { id: 'bookmarks', title: 'Bookmarks', icon: 'bookmark', hideable: true, active: leftPanel === 'bookmarks' && !booksOpen, run: leave(() => setLeftPanel('bookmarks')) },
       {
         id: 'periodic',
         title: 'Periodic notes',
         icon: 'calendar',
         hideable: true,
-        run: () => openPeriodic('daily'),
+        run: leave(() => openPeriodic('daily')),
         menu: periodItems(),
       },
       { id: 'templates', title: 'Templates and periodic notes', icon: 'library', hideable: true, run: () => setNotesSettings(true) },
-      { id: 'tags', title: 'Tags', icon: 'hash', hideable: true, active: leftPanel === 'tags', run: () => setLeftPanel('tags') },
+      { id: 'tags', title: 'Tags', icon: 'hash', hideable: true, active: leftPanel === 'tags' && !booksOpen, run: leave(() => setLeftPanel('tags')) },
       { id: 'commands', title: 'Command palette', icon: 'command', hideable: true, run: () => setPalette(true, 'commands') },
     ];
     if (gitEnabled) {

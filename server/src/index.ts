@@ -93,6 +93,7 @@ async function main() {
           mediaSrc: ["'self'", 'https://chat.jrcookgroup.com'],
           objectSrc: ["'none'"],
           frameSrc: ["'self'", 'blob:'],
+          workerSrc: ["'self'", 'blob:'],
           baseUri: ["'self'"],
           formAction: ["'self'"],
           frameAncestors: ["'none'"],

@@ -40,6 +40,11 @@ export function initUrlSync(): string | null {
   // entry instead of pushing, so Back doesn't land on a stale '/'.
   let firstSync = true;
   useStore.subscribe((state, prev) => {
+    if (state.booksOpen) {
+      const q = window.location.search || '';
+      if (window.location.pathname !== '/books') window.history.replaceState(null, '', '/books' + q);
+      return;
+    }
     if (state.activePath === prev.activePath) return;
     const url = pathToUrl(state.activePath);
     if (window.location.pathname === url) return;

@@ -14,6 +14,7 @@ import { editorFind, getActiveEditor } from '../lib/activeEditor';
 import { triggerAddProperty } from '../lib/livePreview';
 import { pathToUrl } from '../lib/urlsync';
 import { VIDEO_EXT_RE, AUDIO_EXT_RE } from '../lib/media';
+import Books from './Books';
 
 function EditorPane() {
   const activePath = useStore((s) => s.activePath);
@@ -76,6 +77,7 @@ export default function Workspace() {
   const toggleRight = useStore((s) => s.toggleRight);
   const setMobileDrawer = useStore((s) => s.setMobileDrawer);
   const isMobile = useIsMobile();
+  const booksOpen = useStore((s) => s.booksOpen);
   const newNote = useStore((s) => s.newNote);
   const setTemplatePicker = useStore((s) => s.setTemplatePicker);
   const goBack = useStore((s) => s.goBack);
@@ -301,6 +303,14 @@ export default function Workspace() {
       handleFiles(e.dataTransfer.files);
     }
   };
+
+  if (booksOpen) {
+    return (
+      <div className="workspace books-workspace">
+        <Books />
+      </div>
+    );
+  }
 
   return (
     <div className="workspace" onPaste={onPaste} onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>

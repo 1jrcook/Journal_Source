@@ -206,6 +206,9 @@ interface AppState {
   setTrash: (v: boolean) => void;
   /** Open (true) or close (false) the Graph view tab. */
   setGraph: (v: boolean) => void;
+  /** Ebook reader. Notes it writes are ordinary vault notes. */
+  booksOpen: boolean;
+  setBooksOpen: (v: boolean) => void;
   openGraph: () => Promise<void>;
   graphSettings: GraphSettings;
   setGraphSettings: (patch: Partial<GraphSettings>) => void;
@@ -478,6 +481,19 @@ export const useStore = create<AppState>()(
       setGraph: (v) => {
         if (v) get().openGraph();
         else get().closeTab(GRAPH_PATH);
+      },
+      booksOpen: false,
+      setBooksOpen: (v) => {
+        if (get().booksOpen === v) return;
+        const q = window.location.search || '';
+        if (v) {
+          if (window.location.pathname !== '/books') window.history.pushState(null, '', '/books' + q);
+        } else if (window.location.pathname === '/books') {
+          const path = get().activePath;
+          const url = !path ? '/' : path === GRAPH_PATH ? '/graph' : `/note/${path.split('/').map(encodeURIComponent).join('/')}`;
+          window.history.replaceState(null, '', url + q);
+        }
+        set({ booksOpen: v });
       },
       openGraph: async () => {
         if (get().dirty) await get().save();

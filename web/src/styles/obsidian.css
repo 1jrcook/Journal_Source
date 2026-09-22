@@ -2040,3 +2040,54 @@ audio.media-embed { display: block; width: min(100%, 480px); max-width: 100%; ma
 }
 .image-lightbox-close:hover { background: rgba(255, 255, 255, .18); }
 .image-lightbox-close svg { width: 22px; height: 22px; }
+
+.app.books-mode { --sidebar-width: 0px; --right-width: 0px; }
+.books-workspace { background: var(--background-primary); }
+.books { display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--text-normal); background: var(--background-primary); }
+.books-bar, .books-note-bar, .books-lib-head {
+  display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px;
+  border-bottom: 1px solid var(--background-modifier-border); background: var(--background-secondary);
+}
+.books-bar .grow, .books-note-bar .grow { flex: 1; }
+.books-author { color: var(--text-muted); font-size: .85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.books-bar button, .books-bar select, .books-bar input, .books-note-bar button, .book-pop button, .book-pop textarea {
+  font: inherit; color: var(--text-normal); background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s, 6px); padding: 4px 8px;
+}
+.books-bar button, .books-note-bar button, .book-pop button { cursor: pointer; }
+.books-progress { display: flex; align-items: center; width: 120px; }
+.books-progress input { width: 100%; }
+.books-bar form input { width: 120px; }
+.books-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr) minmax(260px, 340px); }
+.books-lib, .books-side { min-height: 0; overflow: auto; background: var(--background-secondary); }
+.books-side { border-left: 1px solid var(--background-modifier-border); }
+.books-lib-list, .books-notes { display: flex; flex-direction: column; padding: 6px; gap: 2px; }
+.books-lib-list button, .books-note-card, .books-hits button {
+  text-align: left; font: inherit; color: var(--text-normal); background: transparent;
+  border: 0; border-radius: var(--radius-s, 6px); padding: 6px 8px; cursor: pointer;
+}
+.books-lib-list button.on, .books-lib-list button:hover, .books-note-card:hover, .books-hits button:hover { background: var(--background-modifier-hover, rgba(255,255,255,.06)); }
+.books-note-card { display: flex; flex-direction: column; gap: 4px; }
+.books-note-card span { color: var(--text-muted); font-size: .82em; }
+.books-add { cursor: pointer; display: flex; }
+.books-add input { display: none; }
+.books-stage { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--background-primary); }
+.books-foliate { flex: 1; min-height: 0; }
+.books-foliate foliate-view { display: block; height: 100%; }
+.books-sheet { flex: 1; overflow: auto; padding: 28px 18%; color: var(--text-normal); font-size: var(--font-text-size); line-height: 1.6; }
+.books-sheet pre { white-space: pre-wrap; font: inherit; }
+.books-empty { color: var(--text-muted); padding: 18px; line-height: 1.45; }
+.books-empty.big { margin: auto; text-align: center; max-width: 36em; }
+.books-status { position: absolute; top: 8px; left: 12px; color: var(--text-muted); font-size: .85em; }
+.books-hits { position: absolute; right: 8px; bottom: 8px; width: min(320px, 40%); max-height: 40%; overflow: auto; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s, 6px); }
+.books-note { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.books-note-editor { flex: 1; min-height: 0; }
+.book-pop { position: fixed; z-index: 40; width: min(320px, calc(100vw - 16px)); padding: 10px; display: flex; flex-direction: column; gap: 8px; background: var(--background-primary); color: var(--text-normal); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m, 10px); box-shadow: 0 10px 30px rgba(0,0,0,.28); }
+.book-pop q { color: var(--text-muted); font-size: .85em; }
+.book-pop textarea { min-height: 72px; resize: vertical; }
+.book-pop-row { display: flex; justify-content: flex-end; gap: 8px; }
+.book-pop button.primary { background: var(--interactive-accent, #c9a227); color: #1a1408; border-color: transparent; }
+@media (max-width: 860px) {
+  .books-body { grid-template-columns: 1fr; grid-template-rows: 28vh minmax(40vh, 1fr) 28vh; }
+  .books-sheet { padding: 20px 16px 48px; }
+}
