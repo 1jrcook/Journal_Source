@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import type { TreeNode } from '../lib/api';
 import { useStore } from '../lib/store';
@@ -43,7 +43,18 @@ type FoliateView = HTMLElement & {
 };
 
 function loadModule(url: string): Promise<Record<string, unknown>> {
-  return (new Function('u', 'return import(u)') as (u: string) => Promise<Record<string, unknown>>)(url);
+  const fn = (globalThis as { __jrLoadModule?: (u: string) => Promise<Record<string, unknown>> }).__jrLoadModule;
+  if (!fn) return Promise.reject(new Error('The reader is still loading. Try the book again.'));
+  return fn(url);
+}
+
+function storedOn(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key);
+    if (v === '1') return true;
+    if (v === '0') return false;
+  } catch { /* private mode */ }
+  return fallback;
 }
 
 function textOf(v: unknown): string {
@@ -217,7 +228,14 @@ export default function Books() {
   const [marks, setMarks] = useState<Mark[]>([]);
   const [menu, setMenu] = useState<Menu | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
+  const [collapsed, setCollapsed] = useState(() => storedOn('jr-books-collapsed', false));
+  const [autoHide, setAutoHide] = useState(() => storedOn('jr-books-autohide', true));
+  const [peek, setPeek] = useState(false);
+  const [holdShut, setHoldShut] = useState(false);
+  const [fill, setFill] = useState(false);
+  const [full, setFull] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const folderRef = useRef('');
@@ -227,6 +245,47 @@ export default function Books() {
 
   const books = useMemo(() => shelfBooks(tree), [tree]);
   const book = books.find((b) => b.path === bookPath) || null;
+  const showLib = book && autoHide ? peek && !holdShut : !collapsed;
+  const expanded = full || fill;
+
+  useEffect(() => {
+    try { localStorage.setItem('jr-books-collapsed', collapsed ? '1' : '0'); } catch { /* ignore */ }
+  }, [collapsed]);
+  useEffect(() => {
+    try { localStorage.setItem('jr-books-autohide', autoHide ? '1' : '0'); } catch { /* ignore */ }
+  }, [autoHide]);
+  useEffect(() => {
+    const onChange = () => setFull(document.fullscreenElement === rootRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const hideLib = () => {
+    if (book && autoHide) {
+      setPeek(false);
+      setHoldShut(true);
+    } else {
+      setCollapsed(true);
+    }
+  };
+  const revealLib = () => {
+    setHoldShut(false);
+    if (book && autoHide) setPeek(true);
+    else setCollapsed(false);
+  };
+  const toggleFull = () => {
+    const el = rootRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      setFill(false);
+      return;
+    }
+    if (fill) { setFill(false); return; }
+    const req = el.requestFullscreen?.bind(el);
+    if (!req) { setFill(true); return; }
+    req().catch(() => setFill(true));
+  };
 
   const loadMarks = useCallback(async (folderName: string) => {
     if (!folderName) { setMarks([]); return; }
@@ -420,7 +479,11 @@ export default function Books() {
       setMenu(null);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setMenu(null); return; }
+      if (e.key === 'Escape') {
+        setMenu(null);
+        if (!document.fullscreenElement) setFill(false);
+        return;
+      }
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (e.key === 'ArrowLeft') viewRef.current?.goLeft();
@@ -526,18 +589,37 @@ export default function Books() {
   };
 
   return (
-    <div className="books">
+    <div ref={rootRef} className={showLib ? (fill ? 'books books-fill' : 'books') : (fill ? 'books lib-shut books-fill' : 'books lib-shut')}>
+      <div
+        className="books-lib-wrap"
+        onMouseEnter={() => { if (autoHide) setPeek(true); }}
+        onMouseLeave={() => { setPeek(false); setHoldShut(false); }}
+      >
       <aside className="books-lib">
         <div className="books-lib-head">
           <span>Books</span>
-          <label className="books-add" title="Add a book">
-            <IconPlus />
-            <input
-              type="file"
-              accept=".epub,.mobi,.azw,.azw3,.fb2,.fbz,.cbz,.pdf,.txt,.html,.htm,.docx,.rtf"
-              onChange={(e) => onUpload(e.target.files)}
-            />
-          </label>
+          <div className="books-lib-tools">
+            <button
+              type="button"
+              className={autoHide ? 'books-tool on' : 'books-tool'}
+              title={autoHide ? 'List opens when the pointer is at the left edge' : 'Hide the list until the pointer is at the left edge'}
+              aria-pressed={autoHide}
+              onClick={() => setAutoHide((v) => !v)}
+            >
+              <IconHover />
+            </button>
+            <button type="button" className="books-tool" title="Hide book list" aria-label="Hide book list" onClick={hideLib}>
+              <IconHide />
+            </button>
+            <label className="books-add" title="Add a book">
+              <IconPlus />
+              <input
+                type="file"
+                accept=".epub,.mobi,.azw,.azw3,.fb2,.fbz,.cbz,.pdf,.txt,.html,.htm,.docx,.rtf"
+                onChange={(e) => onUpload(e.target.files)}
+              />
+            </label>
+          </div>
         </div>
         <div
           className="books-lib-list"
@@ -558,7 +640,24 @@ export default function Books() {
           ))}
         </div>
       </aside>
+      {!showLib && (
+        <button type="button" className="books-rail" title="Show book list" aria-label="Show book list" onClick={revealLib}>
+          <IconShow />
+        </button>
+      )}
+      </div>
       <div className="books-stage">
+        {book && (
+          <button
+            type="button"
+            className="books-full"
+            title={expanded ? 'Leave full screen' : 'Full screen'}
+            aria-label={expanded ? 'Leave full screen' : 'Full screen'}
+            onClick={toggleFull}
+          >
+            {expanded ? <IconExitFull /> : <IconFull />}
+          </button>
+        )}
         {!book && !status && <div className="books-empty big">Choose a book. Select a passage to highlight it, or to leave a note.</div>}
         {status && <div className="books-status">{status}</div>}
         <div ref={hostRef} className="books-foliate" hidden={!book || !!plainHtml} />
@@ -635,5 +734,62 @@ function IconPlus() {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path d="M12 5v14M5 12h14" />
     </svg>
+  );
+}
+
+function ToolIcon({ children }: { children: ReactNode }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
+
+function IconHide() {
+  return (
+    <ToolIcon>
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 3v18" />
+      <path d="m16 15-3-3 3-3" />
+    </ToolIcon>
+  );
+}
+
+function IconShow() {
+  return (
+    <ToolIcon>
+      <path d="m9 18 6-6-6-6" />
+    </ToolIcon>
+  );
+}
+
+function IconHover() {
+  return (
+    <ToolIcon>
+      <path d="M3 3h7v18H3z" />
+      <path d="M14 8l5 4-5 4" />
+    </ToolIcon>
+  );
+}
+
+function IconFull() {
+  return (
+    <ToolIcon>
+      <path d="M15 3h6v6" />
+      <path d="M9 21H3v-6" />
+      <path d="M21 3l-7 7" />
+      <path d="M3 21l7-7" />
+    </ToolIcon>
+  );
+}
+
+function IconExitFull() {
+  return (
+    <ToolIcon>
+      <path d="M9 3H3v6" />
+      <path d="M15 21h6v-6" />
+      <path d="M3 3l7 7" />
+      <path d="M21 21l-7-7" />
+    </ToolIcon>
   );
 }
