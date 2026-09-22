@@ -141,16 +141,26 @@ function Shares() {
     load();
   };
   const remove = async (s: any) => {
-    if (!confirm(`Delete the public link for "${s.path}"? The URL stops working permanently.`)) return;
+    const ok = await useStore.getState().ask({
+      title: 'Delete link',
+      message: `Delete the public link for "${s.path}"? The URL stops working permanently.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (ok === null) return;
     await api.deleteShare(s.id);
     load();
   };
   const setPassword = async (s: any) => {
-    const pw = prompt(
-      s.hasPassword
-        ? 'New password for this link (leave empty to REMOVE the password):'
-        : 'Password for this link:',
-    );
+    const pw = await useStore.getState().ask({
+      title: 'Link password',
+      message: s.hasPassword
+        ? 'New password for this link. Leave it empty to remove the password.'
+        : 'Password for this link.',
+      value: '',
+      password: true,
+      confirmLabel: 'Save',
+    });
     if (pw === null) return;
     await api.setSharePassword(s.id, pw || null);
     notify(pw ? 'Password set' : 'Password removed');

@@ -591,7 +591,22 @@ body.wo-col-resizing .sidebar, body.wo-col-resizing .right-sidebar { transition:
 .cm-editor { height: 100%; background: var(--background-primary) !important; color: var(--text-normal); }
 .cm-editor.cm-focused { outline: none !important; }
 .cm-editor .cm-content { font-family: var(--font-text); font-size: var(--font-text-size); line-height: var(--line-height-normal);
-  margin: 0 auto; padding: 28px var(--file-margins) 40vh; caret-color: var(--text-normal); }
+  margin: 0 auto; padding: 28px var(--file-margins) 40vh; caret-color: #000; }
+/* CodeMirror draws the caret as a black border, which disappears on the dark page. */
+.cm-editor .cm-cursor, .cm-editor .cm-dropCursor {
+  border-left-color: #000 !important;
+  border-left-width: 2px !important;
+}
+.theme-dark .cm-content,
+.theme-dark .cm-inline-title,
+.theme-dark .ask-input { caret-color: #fff; }
+.theme-dark .cm-cursor, .theme-dark .cm-dropCursor { border-left-color: #fff !important; }
+.theme-light .cm-content,
+.theme-light .cm-inline-title,
+.theme-light .ask-input { caret-color: #000; }
+.theme-light .cm-cursor, .theme-light .cm-dropCursor { border-left-color: #000 !important; }
+.cm-inline-title:hover { background: var(--bg-modifier-hover); }
+.cm-inline-title:focus { background: var(--bg-modifier-hover); }
 .markdown-source-view.is-readable-line-width .cm-content { max-width: var(--file-line-width); }
 .cm-editor .cm-line { padding: 0; }
 .cm-gutters { background: var(--background-primary) !important; border: 0 !important; color: var(--text-faint) !important; }
@@ -1112,6 +1127,16 @@ body.wo-col-resizing .sidebar, body.wo-col-resizing .right-sidebar { transition:
 .btn:hover { background: var(--interactive-accent-hover); }
 .btn.secondary { background: var(--bg-modifier-active); color: var(--text-normal); }
 .btn.danger { background: #d6453d; color: #fff; }
+
+.ask-bg { z-index: 400; }
+.ask-dialog { width: 420px; padding: 18px 20px 16px; }
+.ask-dialog h2 { margin: 0 0 8px; font-size: 16px; color: var(--text-normal); }
+.ask-dialog p { margin: 0 0 14px; color: var(--text-muted); font-size: 13px; line-height: 1.45; }
+.ask-input { width: 100%; box-sizing: border-box; margin: 0 0 16px; padding: 8px 10px;
+  border: 1px solid var(--bg-modifier-border); border-radius: var(--radius-s);
+  background: var(--bg-primary); color: var(--text-normal); font: inherit; font-size: 14px; outline: none; }
+.ask-input:focus { border-color: var(--interactive-accent); }
+.ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* Login */
 .login-screen { height: 100%; display: grid; place-items: center; background: var(--bg-secondary); }

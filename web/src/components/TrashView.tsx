@@ -47,7 +47,13 @@ export default function TrashView() {
 
   const remove = async (it: TrashItem) => {
     if (busy) return;
-    if (!confirm(`Permanently delete "${it.name}"? This cannot be undone.`)) return;
+    const ok = await useStore.getState().ask({
+      title: 'Delete permanently',
+      message: `Permanently delete "${it.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (ok === null) return;
     setBusy(true);
     try {
       await api.deleteTrashItem(it.path);
@@ -62,7 +68,13 @@ export default function TrashView() {
 
   const empty = async () => {
     if (busy || items.length === 0) return;
-    if (!confirm(`Empty trash? ${items.length} item(s) will be permanently deleted.`)) return;
+    const ok = await useStore.getState().ask({
+      title: 'Empty trash',
+      message: `Empty trash? ${items.length} item(s) will be permanently deleted.`,
+      confirmLabel: 'Empty trash',
+      danger: true,
+    });
+    if (ok === null) return;
     setBusy(true);
     try {
       await api.emptyTrash();

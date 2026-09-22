@@ -13,6 +13,7 @@ import ShareDialog from './components/ShareDialog';
 import VersionHistory from './components/VersionHistory';
 import TrashView from './components/TrashView';
 import ContextMenu from './components/ContextMenu';
+import AskDialog from './components/AskDialog';
 import FolderPicker from './components/FolderPicker';
 import { loadPlugins } from './lib/plugins';
 import { initUrlSync } from './lib/urlsync';
@@ -134,7 +135,7 @@ export default function App() {
 
   useEffect(() => {
     repaintJr();
-  });
+  }, [theme]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -230,6 +231,7 @@ export default function App() {
       <VersionHistory />
       <TrashView />
       <ContextMenu />
+      <AskDialog />
       <FolderPicker />
       {toast && <div className="toast">{toast}</div>}
     </div>

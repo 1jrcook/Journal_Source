@@ -192,7 +192,14 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
 
   const doDeleteMany = async () => {
     const paths = pruneDescendants(useStore.getState().selected);
-    if (!paths.length || !confirm(`Delete ${paths.length} item${paths.length > 1 ? 's' : ''}?`)) return;
+    if (!paths.length) return;
+    const ok = await useStore.getState().ask({
+      title: 'Delete',
+      message: `Delete ${paths.length} item${paths.length > 1 ? 's' : ''}?`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (ok === null) return;
     let n = 0;
     for (const p of paths) {
       const r = await api.remove(p).catch(() => null);
@@ -206,12 +213,17 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
 
   const doRename = () => setRenamingPath(node.path);
   const doDelete = async () => {
-    if (confirm(`Delete "${node.name}"?`)) {
-      const r = await api.remove(node.path);
-      closeTab(node.path);
-      await loadTree();
-      notify(r.deleted ? 'Deleted permanently' : 'Moved to trash');
-    }
+    const ok = await useStore.getState().ask({
+      title: 'Delete',
+      message: `Delete "${node.name}"?`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (ok === null) return;
+    const r = await api.remove(node.path);
+    closeTab(node.path);
+    await loadTree();
+    notify(r.deleted ? 'Deleted permanently' : 'Moved to trash');
   };
 
   const doCopy = async () => {

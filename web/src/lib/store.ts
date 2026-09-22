@@ -80,6 +80,20 @@ export interface ContextMenuState {
   items: ContextMenuItem[];
 }
 
+export interface DialogSpec {
+  title: string;
+  message?: string;
+  /** When set, the dialog shows a text field and resolves its value. Omit for confirm-only. */
+  value?: string;
+  password?: boolean;
+  confirmLabel?: string;
+  danger?: boolean;
+}
+
+export interface DialogState extends DialogSpec {
+  resolve: (value: string | null) => void;
+}
+
 interface AppState {
   authed: boolean;
   setAuthed: (v: boolean) => void;
@@ -204,6 +218,11 @@ interface AppState {
   /** Tree path currently being inline-renamed (null = none); FileTree shows an input for it. */
   renamingPath: string | null;
   setRenamingPath: (path: string | null) => void;
+  /** Rename a vault file and retarget open tabs. `name` is the filename without its extension. */
+  renamePath: (from: string, name: string) => Promise<boolean>;
+  /** Themed confirm/prompt. Resolves the input (or "") on confirm, null on cancel. */
+  dialog: DialogState | null;
+  ask: (spec: DialogSpec) => Promise<string | null>;
   openDailyNote: () => Promise<void>;
   /** Re-fetch content for the active/split tabs (after reload or remote sync). */
   hydrate: () => Promise<void>;
@@ -560,6 +579,45 @@ export const useStore = create<AppState>()(
 
       renamingPath: null,
       setRenamingPath: (path) => set({ renamingPath: path }),
+
+      renamePath: async (from, name) => {
+        if (!from || from === GRAPH_PATH) return false;
+        const clean = name.replace(/[\\/]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!clean || clean === '.' || clean === '..') return false;
+        const base = from.split('/').pop() ?? from;
+        const dot = base.lastIndexOf('.');
+        const ext = dot > 0 ? base.slice(dot) : '';
+        const file = ext && clean.toLowerCase().endsWith(ext.toLowerCase()) ? clean : `${clean}${ext}`;
+        const dir = from.includes('/') ? from.slice(0, from.lastIndexOf('/')) : '';
+        const to = dir ? `${dir}/${file}` : file;
+        if (to === from) return true;
+        try {
+          if (get().activePath === from && get().dirty) await get().save();
+          await api.rename(from, to);
+        } catch (e: any) {
+          get().notify(e?.message ?? 'Rename failed');
+          return false;
+        }
+        const swap = (p: string | null) => (p === from ? to : p);
+        set((s) => ({
+          tabs: s.tabs.map((t) => (t.path === from ? { path: to, title: file } : t)),
+          activePath: swap(s.activePath),
+          splitPath: swap(s.splitPath),
+          recent: s.recent.map((p) => (p === from ? to : p)),
+          bookmarks: s.bookmarks.map((p) => (p === from ? to : p)),
+          history: s.history.map((p) => (p === from ? to : p)),
+        }));
+        await get().loadTree();
+        return true;
+      },
+
+      dialog: null,
+      ask: (spec) =>
+        new Promise((resolve) => {
+          const prev = get().dialog;
+          if (prev) prev.resolve(null);
+          set({ dialog: { ...spec, resolve } });
+        }),
 
       newFolder: async (dir) => {
         // Create an "Untitled" folder (unique name) and drop straight into inline

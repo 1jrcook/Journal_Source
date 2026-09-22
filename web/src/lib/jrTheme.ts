@@ -167,21 +167,31 @@ function paint(pack: JrPack) {
     vars["--font-default"] = face;
     vars["--font-ui"] = face;
     vars["--font-text"] = face;
-    vars["--font-text-size"] = "15px";
     vars["--radius"] = "10px";
     vars["--radius-s"] = "6px";
     vars["--radius-m"] = "10px";
     vars["--radius-l"] = "12px";
   }
+  // Note size comes from the shell journal font. Do not also write a hardcoded
+  // 15px here: the 4s theme pull omits journalFont and was snapping 16px ↔ 15px.
   if (pack.journalFont && /^\d{2}$/.test(String(pack.journalFont))) {
     vars["--font-text-size"] = `${pack.journalFont}px`;
   }
   Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
 }
 
+function keptFont(pack: JrPack): string {
+  const incoming = String(pack.journalFont || "");
+  if (/^\d{2}$/.test(incoming)) return incoming;
+  const prev = String(lastPack?.journalFont || "");
+  return /^\d{2}$/.test(prev) ? prev : "";
+}
+
 export function applyJrPack(pack: JrPack): "theme-light" | "theme-dark" {
-  lastPack = pack;
-  paint(pack);
+  const font = keptFont(pack);
+  const merged: JrPack = font ? { ...pack, journalFont: font } : pack;
+  lastPack = merged;
+  paint(merged);
   try {
     localStorage.setItem("jr-shell-theme", pack.theme === "light" ? "light" : "dark");
   } catch {

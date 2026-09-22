@@ -2496,10 +2496,69 @@ class TitleWidget extends WidgetType {
   eq(o: TitleWidget) {
     return o.title === this.title;
   }
+  // The name is edited in this node. Let the browser handle the caret and selection.
+  ignoreEvent() {
+    return true;
+  }
   toDOM() {
     const d = document.createElement('div');
     d.className = 'cm-inline-title';
+    d.contentEditable = 'true';
+    d.spellcheck = false;
+    d.setAttribute('role', 'textbox');
+    d.setAttribute('aria-label', 'Note name');
     d.textContent = this.title;
+    const original = this.title;
+    let settled = false;
+    const selectAll = () => {
+      const range = document.createRange();
+      range.selectNodeContents(d);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    };
+    const commit = (save: boolean) => {
+      if (settled) return;
+      settled = true;
+      const next = (d.textContent || '').replace(/[\\/]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!save || !next || next === original) {
+        d.textContent = original;
+        return;
+      }
+      d.dispatchEvent(new CustomEvent('wo-rename-title', { bubbles: true, detail: { name: next, el: d } }));
+    };
+    d.addEventListener('mousedown', (e) => e.stopPropagation());
+    d.addEventListener('pointerdown', (e) => e.stopPropagation());
+    d.addEventListener('focus', () => window.setTimeout(selectAll, 0));
+    d.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        d.blur();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        d.textContent = original;
+        commit(false);
+        d.blur();
+      }
+    });
+    d.addEventListener('beforeinput', (e) => e.stopPropagation());
+    d.addEventListener('paste', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const text = (e.clipboardData?.getData('text/plain') ?? '').replace(/[\r\n]+/g, ' ');
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const node = document.createTextNode(text);
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+    d.addEventListener('blur', () => commit(true));
     return d;
   }
 }
@@ -2666,7 +2725,11 @@ export const livePreviewTheme = EditorView.baseTheme({
     letterSpacing: '-0.015em',
     color: 'var(--text-normal)',
     margin: '0 0 0.5em',
-    padding: '0',
+    padding: '0 2px',
+    cursor: 'text',
+    userSelect: 'text',
+    outline: 'none',
+    borderRadius: '6px',
   },
   '.cm-em': { fontStyle: 'italic' },
   '.cm-strike': { textDecoration: 'line-through' },

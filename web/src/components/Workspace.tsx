@@ -150,13 +150,17 @@ export default function Workspace() {
         label: 'Rename…',
         icon: 'pencil',
         onClick: async () => {
-          const to = prompt('Rename / move to (vault-relative path):', path);
-          if (to && to !== path) {
-            await api.rename(path, to);
-            closeTab(path);
-            await loadTree();
-            await openFile(to);
-          }
+          const base = path.split('/').pop() ?? path;
+          const dot = base.lastIndexOf('.');
+          const stem = dot > 0 ? base.slice(0, dot) : base;
+          const next = await useStore.getState().ask({
+            title: 'Rename',
+            message: 'This becomes the name in the sidebar.',
+            value: stem,
+            confirmLabel: 'Rename',
+          });
+          if (next === null) return;
+          await useStore.getState().renamePath(path, next);
         },
       };
       const moveItem: ContextMenuItem = {
@@ -246,12 +250,17 @@ export default function Workspace() {
           danger: true,
           icon: 'trash',
           onClick: async () => {
-            if (confirm(`Delete "${baseName}"?`)) {
-              const r = await api.remove(path);
-              closeTab(path);
-              await loadTree();
-              notify(r.deleted ? 'Deleted permanently' : 'Moved to trash');
-            }
+            const ok = await useStore.getState().ask({
+              title: 'Delete',
+              message: `Delete "${baseName}"?`,
+              confirmLabel: 'Delete',
+              danger: true,
+            });
+            if (ok === null) return;
+            const r = await api.remove(path);
+            closeTab(path);
+            await loadTree();
+            notify(r.deleted ? 'Deleted permanently' : 'Moved to trash');
           },
         },
       ];

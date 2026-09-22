@@ -46,7 +46,12 @@ export default function VersionHistory() {
 
   const restore = async () => {
     if (!selected) return;
-    if (!confirm('Restore this version? The current content will be overwritten.')) return;
+    const ok = await useStore.getState().ask({
+      title: 'Restore version',
+      message: 'Restore this version? The current content will be overwritten.',
+      confirmLabel: 'Restore',
+    });
+    if (ok === null) return;
     try {
       await api.write(path, preview);
       if (path === activePath) await openFile(path);

@@ -299,7 +299,18 @@ export default function Editor() {
     view.current = v;
     setActiveEditor(v);
     v.focus();
+    const onRename = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ name: string; el: HTMLElement }>).detail;
+      if (!detail?.name) return;
+      const from = useStore.getState().activePath;
+      if (!from) return;
+      void useStore.getState().renamePath(from, detail.name).then((ok) => {
+        if (!ok && detail.el.isConnected) detail.el.textContent = titleOf(useStore.getState().activePath);
+      });
+    };
+    host.current.addEventListener('wo-rename-title', onRename);
     return () => {
+      host.current?.removeEventListener('wo-rename-title', onRename);
       setActiveEditor(null);
       v.destroy();
     };

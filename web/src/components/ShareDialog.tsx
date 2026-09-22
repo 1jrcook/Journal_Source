@@ -40,11 +40,15 @@ export default function ShareDialog() {
   };
   const password = async () => {
     if (!share) return;
-    const pw = prompt(
-      share.hasPassword
-        ? 'New password for this link (leave empty to REMOVE the password):'
-        : 'Password for this link:',
-    );
+    const pw = await useStore.getState().ask({
+      title: 'Link password',
+      message: share.hasPassword
+        ? 'New password for this link. Leave it empty to remove the password.'
+        : 'Password for this link.',
+      value: '',
+      password: true,
+      confirmLabel: 'Save',
+    });
     if (pw === null) return;
     await api.setSharePassword(share.id, pw || null);
     await loadShares();
@@ -52,7 +56,13 @@ export default function ShareDialog() {
   };
   const remove = async () => {
     if (!share) return;
-    if (!confirm('Delete this public link? The URL stops working permanently.')) return;
+    const ok = await useStore.getState().ask({
+      title: 'Delete link',
+      message: 'Delete this public link? The URL stops working permanently.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (ok === null) return;
     await api.deleteShare(share.id);
     await loadShares();
     notify('Public link deleted');
