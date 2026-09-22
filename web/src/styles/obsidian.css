@@ -607,8 +607,26 @@ body.wo-col-resizing .sidebar, body.wo-col-resizing .right-sidebar { transition:
 .theme-light .cm-cursor, .theme-light .cm-dropCursor { border-left-color: #000 !important; }
 .cm-inline-title:hover { background: var(--bg-modifier-hover); }
 .cm-inline-title:focus { background: var(--bg-modifier-hover); }
+/* CodeMirror's scroller is a row. The title bar has to take the whole first
+   line or the name sits beside the note. */
+.cm-scroller:has(.cm-inline-title-bar) {
+  flex-wrap: wrap;
+  align-content: flex-start;
+}
+.cm-inline-title-bar {
+  order: -1;
+  flex: 0 0 100%;
+  align-self: flex-start;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 input.cm-inline-title {
-  display: block; width: 100%; box-sizing: border-box;
+  display: block; width: 100%; max-width: var(--file-line-width); margin: 0 auto;
+  box-sizing: border-box;
+  padding: 28px var(--file-margins) 0.15em;
   border: 0; background: transparent; font-family: inherit; color: inherit;
   appearance: none; -webkit-appearance: none;
 }

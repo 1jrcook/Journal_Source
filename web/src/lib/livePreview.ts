@@ -2490,9 +2490,11 @@ export const livePreviewReadonly = StateField.define<boolean>({
 /* ---------------- inline title (note filename, Obsidian-style) ---------------- */
 
 /**
- * The filename sits in the scroller, beside the editor — not inside it.
+ * The filename sits in the scroller, above the note — not inside it.
  * A field inside CodeMirror's contenteditable can be selected, but Chrome
  * gives the keystrokes to the note, so the name never changes.
+ * The scroller is a row flexbox, so the bar has to take the whole first line
+ * or it sits beside the note instead of above it.
  */
 class InlineTitleBar {
   bar: HTMLDivElement;
@@ -2744,17 +2746,26 @@ export const livePreviewTheme = EditorView.baseTheme({
     textDecoration: 'none !important',
   },
   // Inline title = h1 alias (§19).
+  '.cm-scroller:has(.cm-inline-title-bar)': {
+    flexWrap: 'wrap',
+    alignContent: 'flex-start',
+  },
   '.cm-inline-title-bar': {
+    order: '-1',
+    flex: '0 0 100%',
+    alignSelf: 'flex-start',
     boxSizing: 'border-box',
     width: '100%',
-    maxWidth: 'var(--file-line-width)',
-    margin: '0 auto',
-    padding: '28px var(--file-margins) 0.15em',
+    maxWidth: 'none',
+    margin: '0',
+    padding: '0',
   },
   '.cm-scroller:has(.cm-inline-title-bar) .cm-content': { paddingTop: '0.2em' },
   '.cm-inline-title': {
     display: 'block',
     width: '100%',
+    maxWidth: 'var(--file-line-width)',
+    margin: '0 auto',
     boxSizing: 'border-box',
     border: '0',
     background: 'transparent',
@@ -2764,8 +2775,7 @@ export const livePreviewTheme = EditorView.baseTheme({
     lineHeight: 'var(--line-height-tight)',
     letterSpacing: '-0.015em',
     color: 'var(--text-normal)',
-    margin: '0',
-    padding: '0 2px',
+    padding: '28px var(--file-margins) 0.15em',
     cursor: 'text',
     outline: 'none',
     borderRadius: '6px',
