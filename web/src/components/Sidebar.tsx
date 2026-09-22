@@ -130,17 +130,17 @@ export default function Sidebar() {
         {leftPanel === 'tags' && <TagsPanel />}
         {leftPanel === 'bookmarks' && <BookmarksPanel />}
       </div>
-      <div className="vault-footer">
-        <span className="vault-name">
-          <Icon name="gem" size={15} /> {vaultName}
-        </span>
-        <span className="grow" />
-        {!inJrPane() && (
+      {!inJrPane() && (
+        <div className="vault-footer">
+          <span className="vault-name">
+            <Icon name="gem" size={15} /> {vaultName}
+          </span>
+          <span className="grow" />
           <button title="Settings" onClick={() => setSettings(true)}>
             <Icon name="settings" size={16} />
           </button>
-        )}
-      </div>
+        </div>
+      )}
       <div className="sidebar-resizer" title="Drag to resize" onPointerDown={onResizeDown} />
     </div>
   );

@@ -2489,79 +2489,74 @@ export const livePreviewReadonly = StateField.define<boolean>({
 
 /* ---------------- inline title (note filename, Obsidian-style) ---------------- */
 
-class TitleWidget extends WidgetType {
-  constructor(readonly title: string) {
-    super();
-  }
-  eq(o: TitleWidget) {
-    return o.title === this.title;
-  }
-  // The name is edited in this node. Let the browser handle the caret and selection.
-  ignoreEvent() {
-    return true;
-  }
-  toDOM() {
-    const d = document.createElement('div');
-    d.className = 'cm-inline-title';
-    d.contentEditable = 'true';
-    d.spellcheck = false;
-    d.setAttribute('role', 'textbox');
-    d.setAttribute('aria-label', 'Note name');
-    d.textContent = this.title;
-    const original = this.title;
-    let settled = false;
-    const selectAll = () => {
-      const range = document.createRange();
-      range.selectNodeContents(d);
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(range);
-    };
-    const commit = (save: boolean) => {
-      if (settled) return;
-      settled = true;
-      const next = (d.textContent || '').replace(/[\\/]/g, ' ').replace(/\s+/g, ' ').trim();
-      if (!save || !next || next === original) {
-        d.textContent = original;
-        return;
-      }
-      d.dispatchEvent(new CustomEvent('wo-rename-title', { bubbles: true, detail: { name: next, el: d } }));
-    };
-    d.addEventListener('mousedown', (e) => e.stopPropagation());
-    d.addEventListener('pointerdown', (e) => e.stopPropagation());
-    d.addEventListener('focus', () => window.setTimeout(selectAll, 0));
-    d.addEventListener('keydown', (e) => {
+/**
+ * The filename sits in the scroller, beside the editor — not inside it.
+ * A field inside CodeMirror's contenteditable can be selected, but Chrome
+ * gives the keystrokes to the note, so the name never changes.
+ */
+class InlineTitleBar {
+  bar: HTMLDivElement;
+  input: HTMLInputElement;
+  title = '';
+
+  constructor(readonly view: EditorView) {
+    this.bar = document.createElement('div');
+    this.bar.className = 'cm-inline-title-bar';
+    this.input = document.createElement('input');
+    this.input.type = 'text';
+    this.input.className = 'cm-inline-title';
+    this.input.spellcheck = false;
+    this.input.autocomplete = 'off';
+    this.input.setAttribute('aria-label', 'Note name');
+    this.input.draggable = false;
+    const stop = (e: Event) => e.stopPropagation();
+    for (const type of ['mousedown', 'pointerdown', 'click', 'dblclick', 'keydown', 'beforeinput', 'input', 'paste']) {
+      this.input.addEventListener(type, stop);
+    }
+    this.input.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Enter') {
         e.preventDefault();
-        d.blur();
+        this.input.blur();
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        d.textContent = original;
-        commit(false);
-        d.blur();
+        this.input.value = this.title;
+        this.input.blur();
       }
     });
-    d.addEventListener('beforeinput', (e) => e.stopPropagation());
-    d.addEventListener('paste', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const text = (e.clipboardData?.getData('text/plain') ?? '').replace(/[\r\n]+/g, ' ');
-      const sel = window.getSelection();
-      if (!sel || !sel.rangeCount) return;
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      const node = document.createTextNode(text);
-      range.insertNode(node);
-      range.setStartAfter(node);
-      range.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    });
-    d.addEventListener('blur', () => commit(true));
-    return d;
+    this.input.addEventListener('blur', () => this.commit());
+    this.bar.appendChild(this.input);
+    view.scrollDOM.insertBefore(this.bar, view.contentDOM);
+    this.sync(view);
+  }
+
+  commit() {
+    const next = this.input.value.replace(/[\\/]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!next || next === this.title) {
+      this.input.value = this.title;
+      return;
+    }
+    this.input.dispatchEvent(new CustomEvent('wo-rename-title', { bubbles: true, detail: { name: next, el: this.input } }));
+  }
+
+  sync(view: EditorView) {
+    const title = view.state.field(noteTitleField, false) ?? '';
+    this.bar.hidden = !title;
+    if (document.activeElement !== this.input) this.input.value = title;
+    this.title = title;
+  }
+
+  update(u: ViewUpdate) {
+    const title = u.state.field(noteTitleField, false) ?? '';
+    if (title !== this.title || this.bar.hidden === Boolean(title)) this.sync(u.view);
+  }
+
+  destroy() {
+    this.bar.remove();
   }
 }
+
+export const inlineTitlePlugin = ViewPlugin.fromClass(InlineTitleBar);
 
 export const setNoteTitle = StateEffect.define<string>();
 
@@ -2573,18 +2568,47 @@ export const noteTitleField = StateField.define<string>({
   },
 });
 
+/** First heading that repeats the filename, including its trailing newline. */
+export function duplicateTitleLine(state: EditorState, title: string): { from: number; to: number } | null {
+  if (!title) return null;
+  let pos = 0;
+  const head = state.doc.sliceString(0, Math.min(state.doc.length, 4000));
+  const fm = head.match(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (fm) pos = fm[0].length;
+  if (pos >= state.doc.length) return null;
+  let line = state.doc.lineAt(pos);
+  while (line.text.trim() === '') {
+    if (line.number >= state.doc.lines) return null;
+    line = state.doc.line(line.number + 1);
+  }
+  const h1 = line.text.match(/^#\s+(.+?)\s*$/);
+  if (!h1 || h1[1].trim().toLowerCase() !== title.trim().toLowerCase()) return null;
+  const to = line.number < state.doc.lines ? line.to + 1 : line.to;
+  return { from: line.from, to };
+}
+
 function buildInlineTitle(state: EditorState): DecorationSet {
   if (!state.field(livePreviewState, false)) return Decoration.none;
   const title = state.field(noteTitleField, false) ?? '';
-  if (!title) return Decoration.none;
-  // Skip when the note already opens with an H1 equal to the title — the Trilium
-  // export repeats the title as a heading, and Obsidian would otherwise show it twice.
-  const head = state.doc.sliceString(0, Math.min(state.doc.length, 2000));
-  const noFm = head.replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n?/, '');
-  const firstLine = noFm.split(/\r?\n/).find((l) => l.trim() !== '');
-  const h1 = firstLine?.match(/^#\s+(.+?)\s*$/);
-  if (h1 && h1[1].trim().toLowerCase() === title.trim().toLowerCase()) return Decoration.none;
-  return Decoration.set([Decoration.widget({ widget: new TitleWidget(title), block: true, side: -1 }).range(0)]);
+  // A heading that repeats the filename is the same title. Hide it so the
+  // editable name above is the only header, and keep the heading in the file
+  // so a rename can update it.
+  const dup = duplicateTitleLine(state, title);
+  if (!dup || dup.to <= dup.from) return Decoration.none;
+  return Decoration.set([Decoration.replace({}).range(dup.from, dup.to)]);
+}
+
+/** If the note's first heading repeats the old filename, rewrite it to the new one. */
+export function replaceDuplicateHeading(text: string, oldTitle: string, newTitle: string): string | null {
+  if (!oldTitle || !newTitle || oldTitle === newTitle) return null;
+  const fm = text.match(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/);
+  const offset = fm ? fm[0].length : 0;
+  const rest = text.slice(offset);
+  const m = rest.match(/^([ \t]*\r?\n)*#\s+(.+?)[ \t]*(\r?\n|$)/);
+  if (!m || m[2].trim().toLowerCase() !== oldTitle.trim().toLowerCase()) return null;
+  const line = m[0];
+  const replaced = line.replace(m[2], newTitle.replace(/[\\/]/g, ' ').trim());
+  return text.slice(0, offset) + replaced + rest.slice(line.length);
 }
 
 export const inlineTitleField = StateField.define<DecorationSet>({
@@ -2699,6 +2723,8 @@ export const livePreviewPlugin = ViewPlugin.fromClass(
  */
 export const editorClickFix = EditorView.domEventHandlers({
   mousedown(event, view) {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest?.('.cm-inline-title, .cm-inline-title-bar')) return false;
     if (event.button !== 0 || event.shiftKey || event.detail > 1) return false;
     // `precise: false` returns the CLOSEST position and never null, so clicking
     // anywhere on a tall heading line-box (incl. its padding, where the default
@@ -2718,18 +2744,32 @@ export const livePreviewTheme = EditorView.baseTheme({
     textDecoration: 'none !important',
   },
   // Inline title = h1 alias (§19).
+  '.cm-inline-title-bar': {
+    boxSizing: 'border-box',
+    width: '100%',
+    maxWidth: 'var(--file-line-width)',
+    margin: '0 auto',
+    padding: '28px var(--file-margins) 0.15em',
+  },
+  '.cm-scroller:has(.cm-inline-title-bar) .cm-content': { paddingTop: '0.2em' },
   '.cm-inline-title': {
+    display: 'block',
+    width: '100%',
+    boxSizing: 'border-box',
+    border: '0',
+    background: 'transparent',
+    fontFamily: 'inherit',
     fontSize: 'var(--h1-size)',
     fontWeight: 'var(--h1-weight)',
     lineHeight: 'var(--line-height-tight)',
     letterSpacing: '-0.015em',
     color: 'var(--text-normal)',
-    margin: '0 0 0.5em',
+    margin: '0',
     padding: '0 2px',
     cursor: 'text',
-    userSelect: 'text',
     outline: 'none',
     borderRadius: '6px',
+    appearance: 'none',
   },
   '.cm-em': { fontStyle: 'italic' },
   '.cm-strike': { textDecoration: 'line-through' },

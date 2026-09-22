@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { api, type TreeNode, type ShareRecord } from './api';
 import { findNode } from './tree';
+import { getActiveEditor } from './activeEditor';
+import {
+  dailyNotePath,
+  expandTemplate,
+  loadTemplateSettings,
+  rememberDailyTemplate,
+} from './templates';
 
 /** Per-tab id so we can ignore the echo of our own server-pushed state change. */
 export const CLIENT_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -223,7 +230,12 @@ interface AppState {
   /** Themed confirm/prompt. Resolves the input (or "") on confirm, null on cancel. */
   dialog: DialogState | null;
   ask: (spec: DialogSpec) => Promise<string | null>;
-  openDailyNote: () => Promise<void>;
+  openDailyNote: (templatePath?: string) => Promise<void>;
+  /** 'insert' puts a template at the cursor. 'daily' makes today's note from one. */
+  templatePicker: 'insert' | 'daily' | null;
+  setTemplatePicker: (mode: 'insert' | 'daily' | null) => void;
+  insertTemplate: (path: string) => Promise<void>;
+  useTemplateAsDaily: (path: string) => Promise<void>;
   /** Re-fetch content for the active/split tabs (after reload or remote sync). */
   hydrate: () => Promise<void>;
   /** Load persisted workspace state from the server and apply it. */
@@ -641,23 +653,85 @@ export const useStore = create<AppState>()(
         set({ leftPanel: 'files', leftOpen: true, renamingPath: path });
       },
 
-      openDailyNote: async () => {
-        const d = new Date();
-        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-          d.getDate(),
-        ).padStart(2, '0')}`;
-        const path = `Daily/${iso}.md`;
-        try {
-          const { path: existing } = await api.resolve(iso);
-          if (existing) {
-            await get().openFile(existing);
-            return;
-          }
-        } catch {
-          /* none */
+      templatePicker: null,
+      setTemplatePicker: (mode) => set({ templatePicker: mode }),
+
+      insertTemplate: async (templatePath) => {
+        const { activePath, content } = get();
+        if (!activePath || !TEXT_RE.test(activePath)) {
+          get().notify('Open a note to insert a template');
+          return;
         }
-        await get().createNote(path, `# ${iso}\n\n`);
-        get().notify(`Daily note ${iso} ready`);
+        const settings = await loadTemplateSettings(get().tree);
+        let raw = '';
+        try {
+          const r = await api.read(templatePath);
+          raw = typeof r === 'string' ? r : r.content;
+        } catch {
+          get().notify('Could not read that template');
+          return;
+        }
+        const title = (activePath.split('/').pop() ?? activePath).replace(/\.(md|markdown)$/i, '');
+        const text = expandTemplate(raw, {
+          title,
+          dateFormat: settings.dateFormat,
+          timeFormat: settings.timeFormat,
+        });
+        const view = getActiveEditor();
+        if (!view) {
+          const gap = content && !content.endsWith('\n') ? '\n' : '';
+          get().setContent(content + gap + text);
+          await get().save();
+          return;
+        }
+        const sel = view.state.selection.main;
+        view.dispatch({
+          changes: { from: sel.from, to: sel.to, insert: text },
+          selection: { anchor: sel.from + text.length },
+        });
+        view.focus();
+      },
+
+      useTemplateAsDaily: async (templatePath) => {
+        const settings = await loadTemplateSettings(get().tree);
+        try {
+          await rememberDailyTemplate(templatePath, settings);
+        } catch {
+          /* the note still gets created from this template below */
+        }
+        await get().openDailyNote(templatePath);
+      },
+
+      openDailyNote: async (templatePath?: string) => {
+        const settings = await loadTemplateSettings(get().tree);
+        const chosen = templatePath || settings.dailyTemplate;
+        const path = dailyNotePath(settings);
+        const title = (path.split('/').pop() ?? path).replace(/\.md$/i, '');
+        try {
+          await api.read(path);
+          await get().openFile(path);
+          if (templatePath) get().notify(`Today's note is already there`);
+          return;
+        } catch {
+          /* create it */
+        }
+        let body = `# ${title}\n\n`;
+        if (chosen) {
+          try {
+            const r = await api.read(chosen);
+            const raw = typeof r === 'string' ? r : r.content;
+            body = expandTemplate(raw, {
+              title,
+              dateFormat: settings.dateFormat,
+              timeFormat: settings.timeFormat,
+            });
+            if (!body.endsWith('\n')) body += '\n';
+          } catch {
+            get().notify('Daily template missing. Started a blank daily note');
+          }
+        }
+        await get().createNote(path, body);
+        get().notify(`Daily note ${title} ready`);
       },
 
       hydrate: async () => {

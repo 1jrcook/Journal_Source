@@ -292,7 +292,7 @@ html[data-jr-pane="1"] button[aria-label="Toggle theme"],
 html[data-jr-pane="1"] button[aria-label="Use light mode"],
 html[data-jr-pane="1"] button[aria-label="Use dark mode"],
 html[data-jr-pane="1"] .theme-toggle,
-html[data-jr-pane="1"] .vault-footer button[title="Settings"] { display: none !important; }
+html[data-jr-pane="1"] .vault-footer { display: none !important; }
 
 /* Same glass and scene as the JR Shell panes. */
 html[data-jr-glass="1"] body { background: var(--jr-bg, #f4f1ea) !important; }
@@ -607,6 +607,11 @@ body.wo-col-resizing .sidebar, body.wo-col-resizing .right-sidebar { transition:
 .theme-light .cm-cursor, .theme-light .cm-dropCursor { border-left-color: #000 !important; }
 .cm-inline-title:hover { background: var(--bg-modifier-hover); }
 .cm-inline-title:focus { background: var(--bg-modifier-hover); }
+input.cm-inline-title {
+  display: block; width: 100%; box-sizing: border-box;
+  border: 0; background: transparent; font-family: inherit; color: inherit;
+  appearance: none; -webkit-appearance: none;
+}
 .markdown-source-view.is-readable-line-width .cm-content { max-width: var(--file-line-width); }
 .cm-editor .cm-line { padding: 0; }
 .cm-gutters { background: var(--background-primary) !important; border: 0 !important; color: var(--text-faint) !important; }

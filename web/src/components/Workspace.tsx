@@ -77,6 +77,7 @@ export default function Workspace() {
   const setMobileDrawer = useStore((s) => s.setMobileDrawer);
   const isMobile = useIsMobile();
   const newNote = useStore((s) => s.newNote);
+  const setTemplatePicker = useStore((s) => s.setTemplatePicker);
   const goBack = useStore((s) => s.goBack);
   const goForward = useStore((s) => s.goForward);
   const openContextMenu = useStore((s) => s.openContextMenu);
@@ -196,6 +197,12 @@ export default function Workspace() {
         moveItem,
         copyItem,
         { label: bookmarks.includes(path) ? 'Remove bookmark' : 'Bookmark', icon: 'bookmark', onClick: () => toggleBookmark(path) },
+        ...(isMd
+          ? [
+              { label: 'Insert template…', icon: 'file-plus', onClick: () => setTemplatePicker('insert') },
+              { label: 'New daily note from template…', icon: 'calendar', onClick: () => setTemplatePicker('daily') },
+            ]
+          : []),
         ...(isMd ? [{ label: 'Add file property', icon: 'plus', onClick: addFileProperty }] : []),
         ...(isMd ? [{ label: 'Export to PDF…', icon: 'file-pdf', onClick: exportToPdf }] : []),
         ...(canSplit
@@ -375,6 +382,9 @@ export default function Workspace() {
             <>
               <button className={`tool-btn ${bookmarks.includes(activePath) ? 'active' : ''}`} title="Bookmark" onClick={() => toggleBookmark(activePath)}>
                 <Icon name="bookmark" size={16} />
+              </button>
+              <button className="tool-btn" title="Insert template" onClick={() => setTemplatePicker('insert')}>
+                <Icon name="file-plus" size={16} />
               </button>
               {!isMobile && (
                 <button className="tool-btn" title="Open to the right" onClick={() => openToSide(activePath)}>

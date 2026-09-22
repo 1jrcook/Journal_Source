@@ -39,6 +39,7 @@ export default function CommandPalette() {
   const save = useStore((s) => s.save);
   const toggleBookmark = useStore((s) => s.toggleBookmark);
   const openDailyNote = useStore((s) => s.openDailyNote);
+  const setTemplatePicker = useStore((s) => s.setTemplatePicker);
   const newNote = useStore((s) => s.newNote);
   const newCanvas = useStore((s) => s.newCanvas);
   const notify = useStore((s) => s.notify);
@@ -52,6 +53,8 @@ export default function CommandPalette() {
       { id: 'new', title: 'New note', hint: '⌘N', run: () => newNote() },
       { id: 'new-canvas', title: 'New canvas', run: () => newCanvas() },
       { id: 'daily', title: 'Open today’s daily note', run: () => openDailyNote() },
+      { id: 'tpl-insert', title: 'Templates: Insert template', run: () => setTemplatePicker('insert') },
+      { id: 'tpl-daily', title: 'Templates: New daily note from template', run: () => setTemplatePicker('daily') },
       { id: 'save', title: 'Save current file', hint: '⌘S', run: () => save() },
       { id: 'bookmark', title: 'Bookmark current file', run: () => activePath && toggleBookmark(activePath) },
       { id: 'split', title: 'Open current file to the right', run: () => activePath && openToSide(activePath) },
@@ -76,7 +79,7 @@ export default function CommandPalette() {
           }
         } },
     ],
-    [save, setLeftPanel, setGraph, setSettings, setTrash, setViewMode, activePath, toggleBookmark, openToSide, openDailyNote, newNote, newCanvas, notify],
+    [save, setLeftPanel, setGraph, setSettings, setTrash, setViewMode, activePath, toggleBookmark, openToSide, openDailyNote, setTemplatePicker, newNote, newCanvas, notify],
   );
 
   const items = useMemo(() => {

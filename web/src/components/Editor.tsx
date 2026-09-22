@@ -25,6 +25,7 @@ import {
   calloutFoldDeco,
   noteTitleField,
   inlineTitleField,
+  inlineTitlePlugin,
   editorClickFix,
   livePreviewReadonly,
   setLivePreviewReadonly,
@@ -37,6 +38,7 @@ import {
   setLivePreviewPropertyTypeSetter,
   setLivePreviewTagProvider,
   setNoteTitle,
+  duplicateTitleLine,
 } from '../lib/livePreview';
 import { renderMarkdown } from '../lib/markdown';
 import { setActiveEditor } from '../lib/activeEditor';
@@ -217,6 +219,7 @@ export default function Editor() {
             { label: 'Table', onClick: () => insert('\n| Column 1 | Column 2 |\n| --- | --- |\n|  |  |\n') },
             { label: 'Horizontal rule', onClick: () => insert('\n---\n') },
             { label: 'Tag', onClick: () => insert('#') },
+            { label: 'Template…', onClick: () => useStore.getState().setTemplatePicker('insert') },
           ],
         },
         { label: '', separator: true },
@@ -278,6 +281,7 @@ export default function Editor() {
         readonlyComp.of(readonlyExt(viewMode === 'reading')),
         noteTitleField.init(() => titleOf(activePath)),
         inlineTitleField,
+        inlineTitlePlugin,
         frontmatterField,
         tableField,
         htmlBlockField,
@@ -304,8 +308,31 @@ export default function Editor() {
       if (!detail?.name) return;
       const from = useStore.getState().activePath;
       if (!from) return;
+      const v = view.current;
+      let heading: { at: number; text: string } | null = null;
+      if (v) {
+        const dup = duplicateTitleLine(v.state, titleOf(from));
+        if (dup) {
+          const line = v.state.doc.lineAt(dup.from);
+          heading = { at: line.from, text: line.text };
+          v.dispatch({ changes: { from: line.from, to: line.to, insert: `# ${detail.name}` } });
+        }
+      }
       void useStore.getState().renamePath(from, detail.name).then((ok) => {
-        if (!ok && detail.el.isConnected) detail.el.textContent = titleOf(useStore.getState().activePath);
+        if (!ok) {
+          const cur = view.current;
+          if (heading && cur) {
+            const line = cur.state.doc.lineAt(Math.min(heading.at, cur.state.doc.length));
+            if (line.text === `# ${detail.name}`) {
+              cur.dispatch({ changes: { from: line.from, to: line.to, insert: heading.text } });
+            }
+          }
+          if (detail.el.isConnected) {
+            const back = titleOf(useStore.getState().activePath);
+            if (detail.el instanceof HTMLInputElement) detail.el.value = back;
+            else detail.el.textContent = back;
+          }
+        }
       });
     };
     host.current.addEventListener('wo-rename-title', onRename);
