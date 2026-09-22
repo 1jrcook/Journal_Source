@@ -11,6 +11,7 @@ import {
   templateForNewNote,
   type Period,
 } from './templates';
+import { dateFromFilename, periodDate, setFrontmatterFields, todayISO } from './noteDates';
 
 /** Per-tab id so we can ignore the echo of our own server-pushed state change. */
 export const CLIENT_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -82,6 +83,8 @@ export interface ContextMenuItem {
   icon?: string;
   onClick?: () => void;
   submenu?: ContextMenuItem[];
+  /** Leave the menu open (show/hide toggles refresh it in place). */
+  keepOpen?: boolean;
 }
 
 export interface ContextMenuState {
@@ -172,6 +175,9 @@ interface AppState {
   searchFor: (q: string) => void;
   leftOpen: boolean;
   rightOpen: boolean;
+  /** Ribbon icon ids the user hid. The Menu button stays. */
+  ribbonHidden: string[];
+  toggleRibbonItem: (id: string) => void;
   toggleLeft: () => void;
   toggleRight: () => void;
   /** Mobile-only overlay drawer; device-local (never persisted/broadcast). */
@@ -218,7 +224,7 @@ interface AppState {
   closeTab: (path: string) => void;
   setContent: (c: string) => void;
   save: () => Promise<void>;
-  createNote: (path: string, body?: string) => Promise<void>;
+  createNote: (path: string, body?: string, opts?: { stamp?: boolean }) => Promise<void>;
   /** Obsidian-style: create & open a fresh "Untitled" note (no prompt). `dir` = target folder, '' = vault root. */
   newNote: (dir?: string) => Promise<void>;
   /** Obsidian-style: create a fresh "Untitled" folder (no prompt) and start inline-renaming it. */
@@ -260,7 +266,7 @@ const TEXT_RE = /\.(md|markdown|txt|json|csv|canvas|css|js|ya?ml)$/i;
 const PERSIST_KEYS = [
   'tabs', 'activePath', 'viewMode', 'expanded', 'splitPath', 'splitDirection',
   'recent', 'bookmarks', 'leftPanel', 'rightPanel', 'leftOpen', 'rightOpen', 'graphSettings',
-  'treeSort', 'autoReveal',
+  'treeSort', 'autoReveal', 'ribbonHidden',
 ] as const;
 
 function pickPersisted(s: any): Record<string, unknown> {
@@ -304,6 +310,7 @@ function applyPersisted(s: any, set: (p: any) => void): void {
     rightPanel: ['backlinks', 'outgoing', 'tags', 'outline'].includes(s.rightPanel) ? s.rightPanel : 'backlinks',
     leftOpen: s.leftOpen !== false,
     rightOpen: s.rightOpen !== false,
+    ribbonHidden: Array.isArray(s.ribbonHidden) ? s.ribbonHidden.filter((id: unknown) => typeof id === 'string') : [],
     graphSettings: migrateGraphSettings(s.graphSettings),
   });
 }
@@ -438,6 +445,12 @@ export const useStore = create<AppState>()(
       searchFor: (q) => set({ searchQuery: q, leftPanel: 'search', leftOpen: true }),
       leftOpen: true,
       rightOpen: true,
+      ribbonHidden: [],
+      toggleRibbonItem: (id) => set((s) => ({
+        ribbonHidden: s.ribbonHidden.includes(id)
+          ? s.ribbonHidden.filter((x) => x !== id)
+          : [...s.ribbonHidden, id],
+      })),
       toggleLeft: () => set((s) => ({ leftOpen: !s.leftOpen })),
       toggleRight: () => set((s) => ({ rightOpen: !s.rightOpen })),
       mobileDrawer: null,
@@ -570,8 +583,16 @@ export const useStore = create<AppState>()(
         set({ dirty: false });
       },
 
-      createNote: async (path, body) => {
-        await api.write(path, body ?? '');
+      createNote: async (path, body, opts) => {
+        let text = body ?? '';
+        const stamp = opts?.stamp !== false && /\.(md|markdown)$/i.test(path);
+        if (stamp) {
+          const fields: Record<string, string> = { created: todayISO() };
+          const named = dateFromFilename(path.split('/').pop() ?? '');
+          if (named) fields.date = named;
+          text = setFrontmatterFields(text, fields);
+        }
+        await api.write(path, text);
         await get().loadTree();
         await get().openFile(path);
       },
@@ -585,8 +606,11 @@ export const useStore = create<AppState>()(
         for (let i = 1; taken.has(name.toLowerCase()); i++) name = `Untitled ${i}.md`;
         const path = base ? `${base}/${name}` : name;
         let body = '';
+        let stamp = true;
         try {
           const settings = await loadTemplateSettings(get().tree);
+          const folder = (settings.folder || '').replace(/^\/+|\/+$/g, '');
+          if (folder && (base === folder || base.startsWith(`${folder}/`))) stamp = false;
           const tpl = templateForNewNote(settings, base);
           if (tpl) {
             const r = await api.read(tpl);
@@ -601,7 +625,7 @@ export const useStore = create<AppState>()(
         } catch {
           body = '';
         }
-        await get().createNote(path, body);
+        await get().createNote(path, body, { stamp });
         if (base) get().revealInTree(path);
       },
 
@@ -777,6 +801,7 @@ export const useStore = create<AppState>()(
             get().notify(`${label} template missing. Started a blank note`);
           }
         }
+        body = setFrontmatterFields(body, { date: periodDate(period), created: todayISO() });
         await get().createNote(path, body);
         get().notify(`${label} note ${title} ready`);
       },

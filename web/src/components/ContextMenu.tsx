@@ -20,7 +20,7 @@ function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose: () =>
                 return;
               }
               it.onClick?.();
-              onClose();
+              if (!it.keepOpen) onClose();
             }}
           >
             {it.icon && <Icon name={it.icon} size={15} />}

@@ -76,6 +76,7 @@ export default function CommandPalette() {
       { id: 'reading', title: 'View: Reading mode', run: () => setViewMode('reading') },
       { id: 'live', title: 'View: Live edit', run: () => setViewMode('live') },
       { id: 'source', title: 'View: Source', run: () => setViewMode('source') },
+      { id: 'ribbon', title: 'Show or hide ribbon icons', run: () => window.dispatchEvent(new CustomEvent('wo-ribbon-menu', { detail: 'visibility' })) },
       { id: 'reindex', title: 'Rebuild search index', run: async () => {
           notify('Rebuilding search index…', 0);
           try {

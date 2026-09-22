@@ -33,6 +33,7 @@ import { buildFileIndex, indexFile, unindexFile } from './services/fileindex.js'
 import { setBroadcaster, broadcast } from './services/realtime.js';
 import { getVaultRoot, ensureVault, invalidateStat } from './services/vault.js';
 import { startAutoSync } from './services/autosync.js';
+import { portNoteDates } from './services/noteDates.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +50,12 @@ async function main() {
   await loadSettings();
   await setPasswordIfInitial();
   await ensureVault();
+  try {
+    const stamped = await portNoteDates();
+    if (stamped) console.log(`[boot] wrote date properties on ${stamped} notes`);
+  } catch (err) {
+    console.error('[boot] date properties', err);
+  }
 
   const app = express();
   // Honour X-Forwarded-* per the deployment's proxy topology (TRUST_PROXY).
