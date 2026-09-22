@@ -25,6 +25,7 @@ function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose: () =>
           >
             {it.icon && <Icon name={it.icon} size={15} />}
             <span className="ctx-label">{it.label}</span>
+            {it.hint && <span className="ctx-hint">{it.hint}</span>}
             {it.submenu && <Icon name="chevron-right" size={14} className="ctx-arrow" />}
             {it.submenu && openSub === i && (
               <div className="context-menu submenu">
@@ -62,14 +63,35 @@ export default function ContextMenu() {
 
   if (!menu) return null;
   const margin = 8;
+  const toolsH = menu.tools && menu.tools.length ? 76 : 0;
   // Rough height estimate, but capped to the viewport so the menu can never be
   // pushed off-screen; a too-tall menu is then made scrollable via CSS max-height.
-  const estHeight = Math.min(menu.items.length * 30 + 12, window.innerHeight - margin * 2);
-  const x = Math.max(margin, Math.min(menu.x, window.innerWidth - 240));
+  const estHeight = Math.min(menu.items.length * 32 + 12 + toolsH, window.innerHeight - margin * 2);
+  const x = Math.max(margin, Math.min(menu.x, window.innerWidth - 280));
   const y = Math.max(margin, Math.min(menu.y, window.innerHeight - estHeight - margin));
 
   return (
     <div className="context-menu" style={{ left: x, top: y }} onClick={(e) => e.stopPropagation()}>
+      {menu.tools && menu.tools.length > 0 && (
+        <div className="context-tools">
+          {menu.tools.map((t) => (
+            <span key={t.title} style={{ display: 'contents' }}>
+              {t.gap && <span className="tool-gap" />}
+              <button
+                type="button"
+                title={t.title}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  t.onClick();
+                  close();
+                }}
+              >
+                <Icon name={t.icon} size={15} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <MenuList items={menu.items} onClose={close} />
     </div>
   );

@@ -81,16 +81,28 @@ export interface ContextMenuItem {
   danger?: boolean;
   separator?: boolean;
   icon?: string;
+  /** Right-aligned shortcut, like Word. */
+  hint?: string;
   onClick?: () => void;
   submenu?: ContextMenuItem[];
   /** Leave the menu open (show/hide toggles refresh it in place). */
   keepOpen?: boolean;
 }
 
+export interface ContextMenuTool {
+  icon: string;
+  title: string;
+  onClick: () => void;
+  /** Draw a thin divider before this button. */
+  gap?: boolean;
+}
+
 export interface ContextMenuState {
   x: number;
   y: number;
   items: ContextMenuItem[];
+  /** Formatting strip drawn above the list (editor right-click). */
+  tools?: ContextMenuTool[];
 }
 
 export interface DialogSpec {

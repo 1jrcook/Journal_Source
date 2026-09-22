@@ -412,10 +412,6 @@ export default function Workspace() {
         </div>
       )}
 
-      {!isMobile && activePath && activePath !== GRAPH_PATH && isMd && viewMode !== 'reading' && (
-        <FormatToolbar />
-      )}
-
       <div className={`editor-area ${splitDirection === 'down' ? 'split-down' : ''}`}>
         {!activePath && (
           <div className="empty-state">

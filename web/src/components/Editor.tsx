@@ -10,6 +10,17 @@ import { obsidianHighlightStyle } from '../lib/highlight';
 import { useStore } from '../lib/store';
 import type { TreeNode } from '../lib/api';
 import { obsidianKeymap } from '../lib/editorCommands';
+import {
+  fmtChecklist,
+  fmtIndent,
+  fmtInline,
+  fmtInsert,
+  fmtLink,
+  fmtOutdent,
+  fmtPrefixLines,
+  fmtRedo,
+  fmtUndo,
+} from '../lib/activeEditor';
 import { suggesterPlugin, setLinkSuggestFiles, setTagSuggestTags } from '../lib/suggest';
 import {
   livePreviewPlugin,
@@ -140,17 +151,6 @@ export default function Editor() {
     });
     v.focus();
   };
-  const prefixLines = (prefix: string) => {
-    const v = view.current;
-    if (!v) return;
-    const { from, to } = v.state.selection.main;
-    const a = v.state.doc.lineAt(from).number;
-    const b = v.state.doc.lineAt(to).number;
-    const changes = [];
-    for (let n = a; n <= b; n++) changes.push({ from: v.state.doc.line(n).from, insert: prefix });
-    v.dispatch({ changes });
-    v.focus();
-  };
   const insert = (text: string, caretOffset = text.length) => {
     const v = view.current;
     if (!v) return;
@@ -185,53 +185,62 @@ export default function Editor() {
     e.preventDefault();
     const v = view.current;
     const sel = v ? v.state.sliceDoc(v.state.selection.main.from, v.state.selection.main.to) : '';
+    const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
     openContextMenu({
       x: e.clientX,
       y: e.clientY,
+      tools: [
+        { icon: 'heading', title: 'Heading', onClick: () => fmtPrefixLines('# ') },
+        { icon: 'bold', title: 'Bold', onClick: () => fmtInline('**') },
+        { icon: 'italic', title: 'Italic', onClick: () => fmtInline('*') },
+        { icon: 'list', title: 'Bullet list', onClick: () => fmtPrefixLines('- ') },
+        { icon: 'check-square', title: 'Checklist', onClick: () => fmtChecklist() },
+        { icon: 'quote', title: 'Quote', onClick: () => fmtPrefixLines('> ') },
+        { icon: 'brackets', title: 'Internal link', onClick: () => fmtInsert('[[]]', 2) },
+        { icon: 'link', title: 'Link', onClick: () => fmtLink() },
+        { icon: 'code', title: 'Inline code', onClick: () => fmtInline('`') },
+        { icon: 'hash', title: 'Tag', onClick: () => fmtInsert('#') },
+        { icon: 'indent-increase', title: 'Indent', onClick: () => fmtIndent(), gap: true },
+        { icon: 'indent-decrease', title: 'Outdent', onClick: () => fmtOutdent() },
+        { icon: 'undo', title: 'Undo', onClick: () => fmtUndo(), gap: true },
+        { icon: 'redo', title: 'Redo', onClick: () => fmtRedo() },
+      ],
       items: [
+        { label: 'Cut', icon: 'scissors', hint: `${mod}X`, onClick: cut },
+        { label: 'Copy', icon: 'copy', hint: `${mod}C`, onClick: copy },
+        { label: 'Paste', icon: 'clipboard', hint: `${mod}V`, onClick: paste },
+        { label: '', separator: true },
         {
-          label: 'Format', icon: 'pencil', submenu: [
-            { label: 'Bold', onClick: () => wrap('**') },
-            { label: 'Italic', onClick: () => wrap('*') },
-            { label: 'Strikethrough', onClick: () => wrap('~~') },
-            { label: 'Highlight', onClick: () => wrap('==') },
-            { label: 'Inline code', onClick: () => wrap('`') },
-          ],
-        },
-        {
-          label: 'Paragraph', icon: 'file-text', submenu: [
-            { label: 'Heading 1', onClick: () => prefixLines('# ') },
-            { label: 'Heading 2', onClick: () => prefixLines('## ') },
-            { label: 'Heading 3', onClick: () => prefixLines('### ') },
-            { label: 'Bullet list', onClick: () => prefixLines('- ') },
-            { label: 'Numbered list', onClick: () => prefixLines('1. ') },
-            { label: 'Task list', onClick: () => prefixLines('- [ ] ') },
-            { label: 'Quote', onClick: () => prefixLines('> ') },
+          label: 'Styles', icon: 'heading', submenu: [
+            { label: 'Heading 1', onClick: () => fmtPrefixLines('# ') },
+            { label: 'Heading 2', onClick: () => fmtPrefixLines('## ') },
+            { label: 'Heading 3', onClick: () => fmtPrefixLines('### ') },
+            { label: 'Bullet list', onClick: () => fmtPrefixLines('- ') },
+            { label: 'Numbered list', onClick: () => fmtPrefixLines('1. ') },
+            { label: 'Checklist', onClick: () => fmtChecklist() },
+            { label: 'Quote', onClick: () => fmtPrefixLines('> ') },
             { label: 'Code block', onClick: () => wrap('```\n', '\n```') },
           ],
         },
+        { label: 'Strikethrough', onClick: () => fmtInline('~~') },
+        { label: 'Highlight', onClick: () => fmtInline('==') },
+        { label: '', separator: true },
         {
           label: 'Insert', icon: 'plus', submenu: [
-            { label: 'Internal link', onClick: () => insert('[[]]', 2) },
-            { label: 'External link', onClick: () => wrap('[', '](url)') },
-            { label: 'Embed file', onClick: () => insert('![[]]', 3) },
+            { label: 'Internal link', onClick: () => fmtInsert('[[]]', 2) },
+            { label: 'Link', onClick: () => fmtLink() },
+            { label: 'Embed file', onClick: () => fmtInsert('![[]]', 3) },
             { label: 'Callout', onClick: () => insert('> [!note] Title\n> ', 18) },
             { label: 'Table', onClick: () => insert('\n| Column 1 | Column 2 |\n| --- | --- |\n|  |  |\n') },
             { label: 'Horizontal rule', onClick: () => insert('\n---\n') },
-            { label: 'Tag', onClick: () => insert('#') },
+            { label: 'Tag', onClick: () => fmtInsert('#') },
             { label: 'Template…', onClick: () => useStore.getState().setTemplatePicker('insert') },
           ],
         },
         { label: '', separator: true },
-        { label: 'Cut', onClick: cut },
-        { label: 'Copy', onClick: copy },
-        { label: 'Paste', onClick: paste },
-        { label: 'Select all', onClick: selectAll },
+        { label: 'Select all', hint: `${mod}A`, onClick: selectAll },
         ...(sel
-          ? [
-              { label: '', separator: true },
-              { label: `Search for “${sel.slice(0, 24)}”`, icon: 'search', onClick: () => setLeftPanel('search') },
-            ]
+          ? [{ label: `Search for “${sel.slice(0, 24)}”`, icon: 'search', onClick: () => setLeftPanel('search') }]
           : []),
       ],
     });

@@ -1410,6 +1410,11 @@ class FrontmatterWidget extends WidgetType {
   toDOM(view: EditorView) {
     const box = document.createElement('div');
     box.className = 'properties cm-properties';
+    // Margin is outside CodeMirror's block-height map, so a click below this
+    // widget lands about one line too low. Keep the gap as padding.
+    box.style.margin = '0';
+    box.style.paddingTop = '4px';
+    box.style.paddingBottom = '28px';
 
     // Re-find the current frontmatter range and replace it with fresh YAML.
     const commit = (props: Prop[]) => {
@@ -2726,15 +2731,19 @@ export const livePreviewPlugin = ViewPlugin.fromClass(
 export const editorClickFix = EditorView.domEventHandlers({
   mousedown(event, view) {
     const target = event.target as HTMLElement | null;
-    if (target?.closest?.('.cm-inline-title, .cm-inline-title-bar')) return false;
+    if (target?.closest?.('.cm-inline-title, .cm-inline-title-bar, .cm-properties, .properties, button, input, a, .cm-task-checkbox')) {
+      return false;
+    }
     if (event.button !== 0 || event.shiftKey || event.detail > 1) return false;
-    // `precise: false` returns the CLOSEST position and never null, so clicking
-    // anywhere on a tall heading line-box (incl. its padding, where the default
-    // posAtCoords returns null and CM leaves the caret put) still moves the caret
-    // onto that line — which reveals its concealed markup on the first click.
-    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }, false);
+    // A direct hit on glyphs is CodeMirror's job (including drag-select).
+    // Only empty padding — a tall heading's top gap, where the browser has no
+    // caret — needs a snap, biased up so the gap does not grab the next line.
+    const caret = document.caretRangeFromPoint?.(event.clientX, event.clientY);
+    if (caret) return false;
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY - 6 }, false);
     view.dispatch({ selection: { anchor: pos } });
-    return false; // let CodeMirror handle focus/drag normally too
+    view.focus();
+    return true;
   },
 });
 
@@ -2815,8 +2824,8 @@ export const livePreviewTheme = EditorView.baseTheme({
     top: '1px',
   },
   '.cm-task-checkbox': { verticalAlign: 'middle', marginRight: '4px', cursor: 'pointer' },
-  '.cm-embed-image': { maxWidth: '100%', borderRadius: '6px', display: 'block', margin: '6px 0' },
-  '.cm-properties': { margin: '4px 0 18px' },
+  '.cm-embed-image': { maxWidth: '100%', borderRadius: '6px', display: 'block', margin: '0', padding: '6px 0' },
+  '.cm-properties': { margin: '0', padding: '4px 0 28px' },
   // Compound `.cm-line.cm-blockquote` selector beats CodeMirror's own `.cm-line`
   // padding rule (equal specificity, declared later) so the gap actually applies —
   // otherwise text sits flush against the bar. Blockquote: 2px accent bar +
@@ -2840,7 +2849,7 @@ export const livePreviewTheme = EditorView.baseTheme({
   },
   '.cm-table th': { fontWeight: '600', background: 'var(--bg-secondary)' },
   // Interactive table editor (Obsidian-style): click-to-edit cells + hover controls.
-  '.cm-table-wrap': { position: 'relative', display: 'inline-block', margin: '8px 18px 18px 0' },
+  '.cm-table-wrap': { position: 'relative', display: 'inline-block', margin: '0', padding: '8px 18px 18px 0' },
   '.cm-cell-edit': { outline: 'none', cursor: 'text', minWidth: '1em' },
   '.cm-cell-edit:focus': { boxShadow: 'inset 0 0 0 2px var(--interactive-accent)', background: 'var(--bg-primary)' },
   '.cm-table-addcol, .cm-table-addrow': {
@@ -2874,7 +2883,7 @@ export const livePreviewTheme = EditorView.baseTheme({
   },
   // Raw embedded HTML (e.g. CKEditor/Trilium tables) — table metrics match the
   // reading view (4px 10px cells, semibold header) so both modes look alike.
-  '.cm-html-block': { margin: '6px 0' },
+  '.cm-html-block': { margin: '0', padding: '6px 0' },
   '.cm-html-block table': { borderCollapse: 'collapse', margin: '4px 0', width: 'auto' },
   '.cm-html-block th, .cm-html-block td': {
     border: '1px solid var(--bg-modifier-border)',
