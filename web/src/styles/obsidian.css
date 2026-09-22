@@ -228,9 +228,133 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
-html[data-jr-pane="1"] .ribbon button[title="Settings"],
-html[data-jr-pane="1"] .ribbon button[title="Toggle theme"],
+/* Same type and corners as JR Shell (13.5px system/Inter, 10px cards, 6px controls). */
+html[data-jr-pane="1"] {
+  --font-default: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  --font-monospace-default: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-ui: var(--font-default);
+  --font-text: var(--font-default);
+  --font-text-size: 15px;
+  --font-ui-smaller: 12px;
+  --font-ui-small: 13px;
+  --font-ui-medium: 13.5px;
+  --font-ui-large: 18px;
+  --radius: 10px;
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 12px;
+}
+html[data-jr-pane="1"] body {
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  font-size: 13.5px;
+  letter-spacing: -0.011em;
+}
+html[data-jr-pane="1"] button,
+html[data-jr-pane="1"] input,
+html[data-jr-pane="1"] select,
+html[data-jr-pane="1"] textarea { font-family: inherit; }
+html[data-jr-pane="1"] .tree-row,
+html[data-jr-pane="1"] .panel-item,
+html[data-jr-pane="1"] .outline-item,
+html[data-jr-pane="1"] .outgoing-item,
+html[data-jr-pane="1"] .nav-title { font-size: 13.5px; }
+html[data-jr-pane="1"] .nav-title { font-weight: 650; letter-spacing: -0.02em; }
+html[data-jr-pane="1"] .tab-bar { align-items: center; gap: 4px; padding: 6px 8px; }
+html[data-jr-pane="1"] .tab-scroll { align-items: center; }
+html[data-jr-pane="1"] .tab {
+  height: 28px;
+  border: 1px solid var(--bg-modifier-border);
+  border-radius: 8px;
+  margin: 0 1px;
+  background: transparent;
+}
+html[data-jr-pane="1"] .tab.active {
+  background: color-mix(in srgb, var(--interactive-accent) 16%, var(--bg-primary));
+  border-color: color-mix(in srgb, var(--interactive-accent) 40%, var(--bg-modifier-border));
+  color: var(--text-normal);
+}
+html[data-jr-pane="1"] .seg,
+html[data-jr-pane="1"] .modal,
+html[data-jr-pane="1"] .login-card,
+html[data-jr-pane="1"] .context-menu { border-radius: 12px; }
+html[data-jr-pane="1"] .seg { border-radius: 8px; }
+html[data-jr-pane="1"] .palette-input { font-size: 15px; }
+
+/* Settings and light/dark live on the JR gear. Hide them in this client even if
+   the buttons are still in the tree. */
+html[data-jr-pane="1"] button[title="Settings"],
+html[data-jr-pane="1"] button[title="Toggle theme"],
+html[data-jr-pane="1"] button[title="Use light mode"],
+html[data-jr-pane="1"] button[title="Use dark mode"],
+html[data-jr-pane="1"] button[title="Change theme"],
+html[data-jr-pane="1"] button[aria-label="Settings"],
+html[data-jr-pane="1"] button[aria-label="Toggle theme"],
+html[data-jr-pane="1"] button[aria-label="Use light mode"],
+html[data-jr-pane="1"] button[aria-label="Use dark mode"],
+html[data-jr-pane="1"] .theme-toggle,
 html[data-jr-pane="1"] .vault-footer button[title="Settings"] { display: none !important; }
+
+/* Same glass and scene as the JR Shell panes. */
+html[data-jr-glass="1"] body { background: var(--jr-bg, #f4f1ea) !important; }
+html[data-jr-glass="1"] body::before {
+  content: "";
+  position: fixed;
+  inset: -6%;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--jr-photo) center / cover no-repeat;
+  animation: jr-ken 54s ease-in-out infinite;
+}
+html[data-jr-glass="1"][data-jr-video="1"] body::before { content: none; }
+@keyframes jr-ken {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.07); }
+  100% { transform: scale(1); }
+}
+html[data-jr-glass="1"] #jr-scene-vid {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  pointer-events: none;
+}
+html[data-jr-glass="1"] #root,
+html[data-jr-glass="1"] .theme-light,
+html[data-jr-glass="1"] .theme-dark {
+  position: relative;
+  z-index: 1;
+  background: transparent !important;
+  height: 100%;
+}
+html[data-jr-glass="1"] .app,
+html[data-jr-glass="1"] .login-screen { background: transparent !important; }
+html[data-jr-glass="1"] .ribbon,
+html[data-jr-glass="1"] .sidebar,
+html[data-jr-glass="1"] .right-sidebar,
+html[data-jr-glass="1"] .workspace {
+  background: color-mix(in srgb, var(--jr-surface, #fff) var(--jr-pane, 58%), transparent) !important;
+  backdrop-filter: blur(var(--jr-blur, 22px)) saturate(1.25);
+  -webkit-backdrop-filter: blur(var(--jr-blur, 22px)) saturate(1.25);
+}
+html[data-jr-glass="1"] .cm-editor,
+html[data-jr-glass="1"] .cm-scroller,
+html[data-jr-glass="1"] .cm-gutters,
+html[data-jr-glass="1"] .markdown-preview,
+html[data-jr-glass="1"] .tab-bar,
+html[data-jr-glass="1"] .view-header,
+html[data-jr-glass="1"] .format-toolbar,
+html[data-jr-glass="1"] .vault-footer,
+html[data-jr-glass="1"] .editor-area,
+html[data-jr-glass="1"] .pane,
+html[data-jr-glass="1"] .status-bar { background: transparent !important; }
+html[data-jr-glass="1"] .login-card,
+html[data-jr-glass="1"] .modal {
+  background: color-mix(in srgb, var(--jr-surface, #fff) 86%, transparent) !important;
+  backdrop-filter: blur(var(--jr-blur, 22px)) saturate(1.25);
+  -webkit-backdrop-filter: blur(var(--jr-blur, 22px)) saturate(1.25);
+}
 .theme-light, .theme-dark { height: 100%; }
 body {
   font-family: var(--font-ui);

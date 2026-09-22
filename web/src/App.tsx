@@ -17,7 +17,7 @@ import FolderPicker from './components/FolderPicker';
 import { loadPlugins } from './lib/plugins';
 import { initUrlSync } from './lib/urlsync';
 import { useIsMobile } from './lib/useIsMobile';
-import { applyJrPack, inJrPane, repaintJr, type JrPack } from './lib/jrTheme';
+import { applyJrPack, inJrPane, markJrPane, repaintJr, type JrPack } from './lib/jrTheme';
 
 export default function App() {
   const authed = useStore((s) => s.authed);
@@ -113,10 +113,11 @@ export default function App() {
     window.addEventListener('message', onMsg);
     window.addEventListener('jr-theme', onEv);
     const pull = () => {
-      if (inJrPane()) document.documentElement.dataset.jrPane = '1';
-      const injected = (window as unknown as { __jrTheme?: JrPack }).__jrTheme;
-      if (injected) take(injected);
-      fetch('https://chat.jrcookgroup.com/jr-shell/theme.json', { cache: 'no-store' })
+      if (inJrPane()) markJrPane();
+      const injected = window as unknown as { __jrTheme?: JrPack; __jrThemePack?: JrPack };
+      if (injected.__jrTheme) take(injected.__jrTheme);
+      else if (injected.__jrThemePack) take(injected.__jrThemePack);
+      fetch('/api/shell-theme', { cache: 'no-store' })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => take(d))
         .catch(() => {});

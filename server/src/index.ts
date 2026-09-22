@@ -81,6 +81,7 @@ async function main() {
           imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
           fontSrc: ["'self'", 'data:'],
           connectSrc: ["'self'", 'ws:', 'wss:'],
+          mediaSrc: ["'self'", 'https://chat.jrcookgroup.com'],
           objectSrc: ["'none'"],
           frameSrc: ["'self'", 'blob:'],
           baseUri: ["'self'"],
@@ -101,6 +102,36 @@ async function main() {
 
   // Health (no auth) — for docker healthcheck
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
+
+  // Same-origin copy of the JR Shell theme. The browser cannot fetch
+  // chat.jrcookgroup.com itself (connect-src is 'self').
+  app.get('/api/shell-theme', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const fallback = { theme: 'dark', glass: 'light', accent: '#c9a227', bg: '#090909', photo: '' };
+    try {
+      const r = await fetch('https://chat.jrcookgroup.com/jr-shell/theme.json', { signal: AbortSignal.timeout(4000) });
+      if (!r.ok) {
+        res.json(fallback);
+        return;
+      }
+      const data = (await r.json()) as Record<string, unknown>;
+      const photo = typeof data.photo === 'string' ? data.photo : '';
+      const photoOk =
+        (/^https:\/\/[^\s"]+$/.test(photo) && photo.length <= 500) ||
+        (/^data:image\/(?:png|jpeg|jpg|webp|gif);base64,/i.test(photo) && photo.length <= 400000);
+      const journalFont = typeof data.journalFont === 'string' && /^\d{2}$/.test(data.journalFont) ? data.journalFont : '';
+      res.json({
+        theme: data.theme === 'light' ? 'light' : 'dark',
+        glass: data.glass === 'off' || data.glass === 'light' || data.glass === 'heavy' ? data.glass : 'light',
+        accent: typeof data.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(data.accent) ? data.accent : '#c9a227',
+        bg: typeof data.bg === 'string' && /^#[0-9a-fA-F]{6}$/.test(data.bg) ? data.bg : '#090909',
+        photo: photoOk ? photo : '',
+        ...(journalFont ? { journalFont } : {}),
+      });
+    } catch {
+      res.json(fallback);
+    }
+  });
 
   // Routes. NOTE: specific /api/* routers must be registered BEFORE the broad
   // '/api' search router, whose router-level requireAuth middleware would
