@@ -228,6 +228,9 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+html[data-jr-pane="1"] .ribbon button[title="Settings"],
+html[data-jr-pane="1"] .ribbon button[title="Toggle theme"],
+html[data-jr-pane="1"] .vault-footer button[title="Settings"] { display: none !important; }
 .theme-light, .theme-dark { height: 100%; }
 body {
   font-family: var(--font-ui);

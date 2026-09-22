@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import Icon from './Icon';
+import { inJrPane } from '../lib/jrTheme';
 
-export default function Ribbon({ onTheme }: { onTheme: () => void }) {
+export default function Ribbon() {
   const setLeftPanel = useStore((s) => s.setLeftPanel);
   const leftPanel = useStore((s) => s.leftPanel);
   const setGraph = useStore((s) => s.setGraph);
@@ -67,10 +68,7 @@ export default function Ribbon({ onTheme }: { onTheme: () => void }) {
           <Icon name="refresh-cw" size={18} style={syncing ? { animation: 'spin 1s linear infinite' } : undefined} />
         </button>
       )}
-      <button title="Toggle theme" onClick={onTheme}>
-        <Icon name="moon" size={18} />
-      </button>
-      {typeof window !== "undefined" && window.parent === window && (
+      {!inJrPane() && (
         <button title="Settings" onClick={() => setSettings(true)}>
           <Icon name="settings" size={18} />
         </button>

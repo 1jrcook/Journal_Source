@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../lib/store';
+import { inJrPane } from '../lib/jrTheme';
 import { api, type TreeNode } from '../lib/api';
 
 interface Cmd {
@@ -57,7 +58,10 @@ export default function CommandPalette() {
       { id: 'search', title: 'Open search', run: () => setLeftPanel('search') },
       { id: 'bookmarks', title: 'Open bookmarks & recent', run: () => setLeftPanel('bookmarks') },
       { id: 'graph', title: 'Open graph view', run: () => setGraph(true) },
-      { id: 'settings', title: 'Open settings', run: () => setSettings(true) },
+      { id: 'settings', title: 'Open settings', run: () => {
+          if (inJrPane()) { notify('Settings are in the JR gear'); return; }
+          setSettings(true);
+        } },
       { id: 'trash', title: 'Open trash', run: () => setTrash(true) },
       { id: 'reading', title: 'View: Reading mode', run: () => setViewMode('reading') },
       { id: 'live', title: 'View: Live edit', run: () => setViewMode('live') },

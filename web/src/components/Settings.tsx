@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import Icon from './Icon';
+import { inJrPane } from '../lib/jrTheme';
 
 type Section = 'vault' | 'plugins' | 'sharing';
 
@@ -15,7 +16,7 @@ export default function Settings() {
     if (open) api.getSettings().then(setSettings).catch(() => {});
   }, [open]);
 
-  if (!open) return null;
+  if (!open || inJrPane()) return null;
 
   return (
     <div className="modal-bg" onClick={() => setOpen(false)}>

@@ -11,6 +11,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>WebObsidian</title>
+    <script>
+      if (/[?&]jr=1(?:&|$)/.test(location.search)) document.documentElement.setAttribute("data-jr-pane", "1");
+    </script>
   </head>
   <body>
     <div id="root"></div>

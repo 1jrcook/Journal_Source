@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useStore } from '../lib/store';
+import { inJrPane } from '../lib/jrTheme';
 import FileTree, { collectFolderPaths } from './FileTree';
 import SearchPanel from './SearchPanel';
 import TagsPanel from './TagsPanel';
@@ -134,7 +135,7 @@ export default function Sidebar() {
           <Icon name="gem" size={15} /> {vaultName}
         </span>
         <span className="grow" />
-        {typeof window !== "undefined" && window.parent === window && (
+        {!inJrPane() && (
           <button title="Settings" onClick={() => setSettings(true)}>
             <Icon name="settings" size={16} />
           </button>

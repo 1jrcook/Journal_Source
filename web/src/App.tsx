@@ -17,6 +17,7 @@ import FolderPicker from './components/FolderPicker';
 import { loadPlugins } from './lib/plugins';
 import { initUrlSync } from './lib/urlsync';
 import { useIsMobile } from './lib/useIsMobile';
+import { applyJrPack, inJrPane, repaintJr, type JrPack } from './lib/jrTheme';
 
 export default function App() {
   const authed = useStore((s) => s.authed);
@@ -34,7 +35,13 @@ export default function App() {
   const save = useStore((s) => s.save);
   const toast = useStore((s) => s.toast);
   const [checking, setChecking] = useState(true);
-  const [theme, setTheme] = useState<'theme-dark' | 'theme-light'>('theme-light');
+  const [theme, setTheme] = useState<'theme-dark' | 'theme-light'>(() => {
+    try {
+      return localStorage.getItem('jr-shell-theme') === 'dark' ? 'theme-dark' : 'theme-light';
+    } catch {
+      return 'theme-light';
+    }
+  });
 
   useEffect(() => {
     api
@@ -63,10 +70,6 @@ export default function App() {
         }
       })
       .catch(() => {});
-    api
-      .getSettings()
-      .then((s) => setTheme(s?.ui?.theme === 'obsidian-dark' ? 'theme-dark' : 'theme-light'))
-      .catch(() => {});
     useStore.getState().loadShares(); // badge shared notes in the file tree
     loadPlugins().catch(() => {});
     // websocket live updates
@@ -93,6 +96,44 @@ export default function App() {
       ws.close();
     };
   }, [authed, loadTree]);
+
+  // Theme, accent, background, and scenes come from JR Shell. The vault does not keep its own.
+  useEffect(() => {
+    let stop = false;
+    const take = (pack: JrPack | null) => {
+      if (stop || !pack) return;
+      if (!pack.theme && !pack.bg) return;
+      setTheme(applyJrPack(pack));
+    };
+    const onMsg = (e: MessageEvent) => {
+      const data = e.data as JrPack & { type?: string };
+      if (data && data.type === 'jr-theme') take(data);
+    };
+    const onEv = (e: Event) => take((e as CustomEvent).detail);
+    window.addEventListener('message', onMsg);
+    window.addEventListener('jr-theme', onEv);
+    const pull = () => {
+      if (inJrPane()) document.documentElement.dataset.jrPane = '1';
+      const injected = (window as unknown as { __jrTheme?: JrPack }).__jrTheme;
+      if (injected) take(injected);
+      fetch('https://chat.jrcookgroup.com/jr-shell/theme.json', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => take(d))
+        .catch(() => {});
+    };
+    pull();
+    const id = window.setInterval(pull, 4000);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+      window.removeEventListener('message', onMsg);
+      window.removeEventListener('jr-theme', onEv);
+    };
+  }, []);
+
+  useEffect(() => {
+    repaintJr();
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -174,7 +215,7 @@ export default function App() {
   return (
     <div className={theme}>
       <div className={appCls}>
-        <Ribbon onTheme={() => setTheme((t) => (t === 'theme-dark' ? 'theme-light' : 'theme-dark'))} />
+        <Ribbon />
         {showLeft && <Sidebar />}
         <Workspace />
         {showRight && <RightSidebar />}
