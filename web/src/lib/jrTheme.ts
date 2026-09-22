@@ -7,6 +7,7 @@ export type JrPack = {
   glass?: string;
   photo?: string;
   journalFont?: string;
+  books?: Record<string, unknown>;
 };
 
 let lastPack: JrPack | null = null;
