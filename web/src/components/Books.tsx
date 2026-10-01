@@ -227,7 +227,55 @@ function rtfToText(src: string): string {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] || c));
+  return s.replace(/[&<>"']/g, (c) => (
+    c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;'
+  ));
+}
+
+/** Wikipedia or Grokipedia address → the article title. Other links stay links. */
+function termFromHref(href: string): string | null {
+  let u: URL;
+  try { u = new URL(href, 'https://grokipedia.com'); } catch { return null; }
+  const host = u.hostname.replace(/^www\./, '');
+  let raw = '';
+  if (host === 'grokipedia.com' && u.pathname.startsWith('/page/')) raw = u.pathname.slice(6);
+  else if (host.endsWith('wikipedia.org')) {
+    if (u.pathname.startsWith('/wiki/')) raw = u.pathname.slice(6);
+    else raw = u.searchParams.get('title') || '';
+  }
+  try { raw = decodeURIComponent(raw); } catch { /* keep the raw title */ }
+  raw = raw.split('#')[0].replace(/_/g, ' ').trim();
+  return raw && raw.length <= 180 ? raw : null;
+}
+
+function keywordAnchor(term: string, label: string): string {
+  return `<a href="#" class="book-keyword" data-grok="${escapeHtml(term)}">${escapeHtml(label)}</a>`;
+}
+
+/** `[[Term]]` and `[[Term|shown]]` become Grokipedia keywords. The rest stays text. */
+function renderMarkedText(text: string): string {
+  const re = /\[\[([^\]|#]+?)(?:\|([^\]]+))?\]\]/g;
+  let out = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    out += escapeHtml(text.slice(last, m.index));
+    const term = m[1].trim();
+    const label = (m[2] || m[1]).trim();
+    if (term) out += keywordAnchor(term, label);
+    else out += escapeHtml(m[0]);
+    last = m.index + m[0].length;
+  }
+  out += escapeHtml(text.slice(last));
+  return `<pre>${out}</pre>`;
+}
+
+function rewriteEncyclopediaLinks(html: string): string {
+  return html.replace(/<a\b([^>]*?)\shref=(["'])(https?:\/\/[^"']+)\2/gi, (full, pre, _q, href) => {
+    const term = termFromHref(href);
+    if (!term) return full;
+    return `<a${pre} href="#" class="book-keyword" data-grok="${escapeHtml(term)}"`;
+  });
 }
 
 async function docxToHtml(file: File): Promise<string> {
@@ -335,7 +383,7 @@ function readerCss(prefs: BooksPrefs, theme: string): string {
       -webkit-hyphens: ${prefs.hyphenate ? 'auto' : 'manual'};
       hyphens: ${prefs.hyphenate ? 'auto' : 'manual'};
     }
-    a:link { color: ${theme === 'light' ? '#2a5db0' : '#9ec1ff'}; }
+    a:link { color: ${theme === 'light' ? '#8a5a12' : '#e8b86a'}; text-underline-offset: 2px; }
     img, svg, video { max-width: 100%; height: auto; }
     pre { white-space: pre-wrap !important; }
   `;
@@ -390,6 +438,8 @@ export default function Books() {
   const [plainHtml, setPlainHtml] = useState('');
   const [marks, setMarks] = useState<Mark[]>([]);
   const [menu, setMenu] = useState<Menu | null>(null);
+  const [grok, setGrok] = useState<{ title: string; html: string; status: 'loading' | 'ok' | 'miss' | 'error' } | null>(null);
+  const [grokIn, setGrokIn] = useState(false);
   const [prefs, setPrefs] = useState<BooksPrefs>(() => readPrefs());
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('jr-shell-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
@@ -413,6 +463,8 @@ export default function Books() {
   const colorRef = useRef<Map<string, string>>(new Map());
   const prefsRef = useRef(prefs);
   const openMenuRef = useRef<(x: number, y: number, quote: string, location: string) => void>(() => {});
+  const openGrokRef = useRef<(term: string) => void>(() => {});
+  const grokOpenRef = useRef(false);
   const addBookmarkRef = useRef<() => void>(() => {});
   const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
   const idleRef = useRef(0);
@@ -597,6 +649,23 @@ export default function Books() {
   };
   openMenuRef.current = openMenu;
 
+  const openGrok = useCallback((term: string) => {
+    const title = term.trim();
+    if (!title) return;
+    setGrok((cur) => {
+      if (!cur) requestAnimationFrame(() => setGrokIn(true));
+      return { title, html: '', status: 'loading' };
+    });
+    api.grokipedia(title).then((r) => {
+      setGrok({ title: r.title || title, html: r.html || '', status: r.html ? 'ok' : 'miss' });
+    }).catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : '';
+      setGrok({ title, html: '', status: /no grokipedia/i.test(msg) ? 'miss' : 'error' });
+    });
+  }, []);
+  openGrokRef.current = openGrok;
+  grokOpenRef.current = grok !== null;
+
   useEffect(() => {
     const host = hostRef.current;
     if (!book) {
@@ -641,10 +710,10 @@ export default function Books() {
       if (dead) return;
       if (!FOLIATE_EXT.test(book.name)) {
         let html = '';
-        if (/\.docx$/i.test(book.name)) html = await docxToHtml(file);
-        else if (/\.html?$/i.test(book.name)) html = (await file.text()).replace(/<script[\s\S]*?<\/script>/gi, '');
-        else if (/\.rtf$/i.test(book.name)) html = `<pre>${escapeHtml(rtfToText(await file.text()))}</pre>`;
-        else html = `<pre>${escapeHtml(await file.text())}</pre>`;
+        if (/\.docx$/i.test(book.name)) html = rewriteEncyclopediaLinks(await docxToHtml(file));
+        else if (/\.html?$/i.test(book.name)) html = rewriteEncyclopediaLinks((await file.text()).replace(/<script[\s\S]*?<\/script>/gi, ''));
+        else if (/\.rtf$/i.test(book.name)) html = renderMarkedText(rtfToText(await file.text()));
+        else html = renderMarkedText(await file.text());
         if (dead) return;
         setPlainHtml(html);
         await loadMarks(folderRef.current);
@@ -711,6 +780,13 @@ export default function Books() {
         const draw = detail.draw as ((fn: unknown, opts: { color: string }) => void) | undefined;
         draw?.(Highlight, { color: colorRef.current.get(value) || COLORS[0].value });
       });
+      view.addEventListener('external-link', (ev) => {
+        const href = String((ev as CustomEvent).detail?.href_ || '');
+        const term = termFromHref(href);
+        if (!term) return;
+        ev.preventDefault();
+        openGrokRef.current(term);
+      });
       view.addEventListener('show-annotation', (ev) => {
         const value = (ev as CustomEvent).detail?.value as string;
         const hit = marksLive.current.find((m) => m.location === value);
@@ -768,6 +844,7 @@ export default function Books() {
     const onUp = (e: MouseEvent) => {
       const root = sheetRef.current;
       if (!root || !root.contains(e.target as Node)) return;
+      if ((e.target as HTMLElement).closest?.('[data-grok], .gk-back')) return;
       const sel = document.getSelection();
       const quote = sel?.toString() || '';
       if (quote.trim().length < 2) return;
@@ -781,6 +858,11 @@ export default function Books() {
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (grokOpenRef.current) {
+          setGrok(null);
+          setGrokIn(false);
+          return;
+        }
         setMenu(null);
         setPanel('none');
         if (!document.fullscreenElement) setFill(false);
@@ -1036,6 +1118,13 @@ export default function Books() {
         fill ? 'books-fill' : '',
         focused ? 'books-focused' : '',
       ].filter(Boolean).join(' ')}
+      onClick={(e) => {
+        const a = (e.target as HTMLElement).closest?.('[data-grok]') as HTMLElement | null;
+        if (!a) return;
+        e.preventDefault();
+        const term = a.getAttribute('data-grok') || '';
+        if (term) openGrok(term);
+      }}
     >
       {prefs.progressBar && book && (
         <div className="books-progress" aria-hidden="true">
@@ -1277,6 +1366,36 @@ export default function Books() {
               </div>
             </form>
           )}
+        </div>
+      )}
+      {grok && (
+        <div
+          className={grokIn ? 'gk-back in' : 'gk-back'}
+          onMouseDown={(e) => {
+            if (e.target !== e.currentTarget) return;
+            setGrok(null);
+            setGrokIn(false);
+          }}
+        >
+          <div className="gk-dlg" role="dialog" aria-modal="true" aria-label={grok.title}>
+            <header className="gk-hd">
+              <h2>{grok.title}</h2>
+              <button
+                type="button"
+                className="gk-x"
+                aria-label="Close"
+                onClick={() => { setGrok(null); setGrokIn(false); }}
+              >
+                ×
+              </button>
+            </header>
+            <div className="gk-body">
+              {grok.status === 'loading' && <p className="gk-status">Opening…</p>}
+              {grok.status === 'miss' && <p className="gk-status">No Grokipedia page for this.</p>}
+              {grok.status === 'error' && <p className="gk-status">Could not open that page.</p>}
+              {grok.status === 'ok' && <div dangerouslySetInnerHTML={{ __html: grok.html }} />}
+            </div>
+          </div>
         </div>
       )}
     </div>

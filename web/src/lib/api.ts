@@ -142,6 +142,10 @@ export const api = {
     return res.json() as Promise<{ ok: true; path: string; size: number }>;
   },
   rawUrl: (path: string) => `/api/files/content?path=${encodeURIComponent(path)}`,
+  grokipedia: (title: string) =>
+    req<{ ok: boolean; title: string; html: string }>(
+      `/api/grokipedia?title=${encodeURIComponent(title)}`,
+    ),
 
   // search & links
   // limit omitted → server returns every match (panel renders them incrementally)
