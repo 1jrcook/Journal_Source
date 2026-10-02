@@ -234,12 +234,13 @@ interface AppState {
   /** Show a toast. ms=0 keeps it until another notify() replaces it. */
   notify: (msg: string, ms?: number) => void;
 
-  openFile: (path: string) => Promise<void>;
+  /** Open a note. Default replaces the current tab. `newTab` adds one (the + button and "Open in new tab"). */
+  openFile: (path: string, opts?: { newTab?: boolean }) => Promise<void>;
   openWikilink: (target: string) => Promise<void>;
   closeTab: (path: string) => void;
   setContent: (c: string) => void;
   save: () => Promise<void>;
-  createNote: (path: string, body?: string, opts?: { stamp?: boolean }) => Promise<void>;
+  createNote: (path: string, body?: string, opts?: { stamp?: boolean; newTab?: boolean }) => Promise<void>;
   /** Obsidian-style: create & open a fresh "Untitled" note (no prompt). `dir` = target folder, '' = vault root. */
   newNote: (dir?: string) => Promise<void>;
   /** Obsidian-style: create a fresh "Untitled" folder (no prompt) and start inline-renaming it. */
@@ -558,7 +559,7 @@ export const useStore = create<AppState>()(
         }
       },
 
-      openFile: async (path) => {
+      openFile: async (path, opts) => {
         if (path === GRAPH_PATH) return get().openGraph();
         if (get().dirty) await get().save();
         // A folder path (e.g. deep-link /note/<folder>) opens a folder content
@@ -571,7 +572,20 @@ export const useStore = create<AppState>()(
         }
         const title = path.split('/').pop() ?? path;
         set((s) => {
-          const tabs = s.tabs.find((t) => t.path === path) ? s.tabs : [...s.tabs, { path, title }];
+          const already = s.tabs.some((t) => t.path === path);
+          let tabs = s.tabs;
+          if (!already) {
+            // A click replaces the current tab. A new tab is only the + button,
+            // "Open in new tab", or the first tab when none is open. A path
+            // already in the bar is focused above — tabs are keyed by path.
+            const spawn = opts?.newTab || !s.activePath;
+            const idx = s.tabs.findIndex((t) => t.path === s.activePath);
+            if (spawn || idx < 0) tabs = [...s.tabs, { path, title }];
+            else {
+              tabs = s.tabs.slice();
+              tabs[idx] = { path, title };
+            }
+          }
           const recent = isFolder ? s.recent : [path, ...s.recent.filter((p) => p !== path)].slice(0, 20);
           return { tabs, activePath: path, content, dirty: false, recent, ...pushHistory(s, path) };
         });
@@ -622,7 +636,7 @@ export const useStore = create<AppState>()(
         }
         await api.write(path, text);
         await get().loadTree();
-        await get().openFile(path);
+        await get().openFile(path, { newTab: !!opts?.newTab });
       },
 
       newNote: async (dir) => {
@@ -653,7 +667,7 @@ export const useStore = create<AppState>()(
         } catch {
           body = '';
         }
-        await get().createNote(path, body, { stamp });
+        await get().createNote(path, body, { stamp, newTab: true });
         if (base) get().revealInTree(path);
       },
 
@@ -664,7 +678,7 @@ export const useStore = create<AppState>()(
         let name = 'Untitled.canvas';
         for (let i = 1; taken.has(name.toLowerCase()); i++) name = `Untitled ${i}.canvas`;
         const path = base ? `${base}/${name}` : name;
-        await get().createNote(path, '{\n\t"nodes":[],\n\t"edges":[]\n}');
+        await get().createNote(path, '{\n\t"nodes":[],\n\t"edges":[]\n}', { newTab: true });
         if (base) get().revealInTree(path);
       },
 

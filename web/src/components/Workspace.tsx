@@ -353,7 +353,7 @@ export default function Workspace() {
         </div>
         <span
           className="tab-new tab-ctl"
-          title="New note (⌘N)"
+          title="New note in a new tab (⌘N)"
           onClick={() => newNote()}
         >
           <Icon name="plus" size={16} />

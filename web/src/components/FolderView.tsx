@@ -20,6 +20,7 @@ function entryIcon(n: TreeNode): string {
 export default function FolderView({ path }: { path: string }) {
   const tree = useStore((s) => s.tree);
   const openFile = useStore((s) => s.openFile);
+  const openContextMenu = useStore((s) => s.openContextMenu);
   const newNote = useStore((s) => s.newNote);
 
   const node = findNode(tree, path);
@@ -57,6 +58,19 @@ export default function FolderView({ path }: { path: string }) {
                   e.dataTransfer.effectAllowed = 'move';
                 }}
                 onClick={() => openFile(c.path)}
+                onContextMenu={(e) => {
+                  if (c.type !== 'file') return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    items: [
+                      { label: 'Open', onClick: () => openFile(c.path) },
+                      { label: 'Open in new tab', onClick: () => openFile(c.path, { newTab: true }) },
+                    ],
+                  });
+                }}
                 title={c.path}
               >
                 {c.type === 'file' && /\.(png|jpe?g|gif|svg|webp)$/i.test(c.ext ?? '') ? (

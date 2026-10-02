@@ -34,6 +34,7 @@ export default function BookmarksPanel() {
     const isBookmarked = bookmarks.includes(path);
     const items: ContextMenuItem[] = [
       { label: 'Open', icon: 'file-text', onClick: () => openFile(path) },
+      { label: 'Open in new tab', icon: 'plus', onClick: () => openFile(path, { newTab: true }) },
       { label: 'Open to the right', icon: 'columns', onClick: () => openToSide(path) },
       { label: '', separator: true },
       { label: 'Reveal file in navigation', icon: 'folder', onClick: () => revealInTree(path) },

@@ -521,7 +521,10 @@ export default function CanvasView() {
     ];
     const items: ContextMenuItem[] = [
       ...(node.type === 'text' ? [{ label: 'Edit', icon: 'pencil', onClick: () => setEditingNode(node.id) }] : []),
-      ...(node.type === 'file' ? [{ label: 'Open', icon: 'arrow-up-right', onClick: () => openFile((node as any).file) }] : []),
+      ...(node.type === 'file' ? [
+        { label: 'Open', icon: 'arrow-up-right', onClick: () => openFile((node as any).file) },
+        { label: 'Open in new tab', icon: 'plus', onClick: () => openFile((node as any).file, { newTab: true }) },
+      ] : []),
       ...(node.type === 'link' ? [{ label: 'Open link', icon: 'globe', onClick: () => window.open((node as any).url, '_blank', 'noopener') }] : []),
       { label: 'Set color', icon: 'palette', submenu: colorSub },
       { label: 'Duplicate', icon: 'file-plus', onClick: duplicateSelection },

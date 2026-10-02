@@ -338,6 +338,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
         ]
       : [
           { label: 'Open', onClick: () => openFile(node.path) },
+          { label: 'Open in new tab', onClick: () => openFile(node.path, { newTab: true }) },
           { label: 'Open to the right', onClick: () => openToSide(node.path) },
           { label: '', separator: true },
           { label: bookmarks.includes(node.path) ? 'Remove bookmark' : 'Bookmark', onClick: () => toggleBookmark(node.path) },
