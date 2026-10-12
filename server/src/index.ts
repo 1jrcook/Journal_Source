@@ -28,6 +28,7 @@ import { sharesRouter, publicSharesRouter } from './routes/shares.js';
 import { notesConfigRouter } from './routes/notesconfig.js';
 import { sheetRouter } from './routes/sheet.js';
 import { grokipediaRouter } from './routes/grokipedia.js';
+import { dictionaryRouter } from './routes/dictionary.js';
 import { sharePageRouter } from './routes/sharepage.js';
 import { initSearch, qmd } from './services/search.js';
 import { buildLinkGraph, updateLinkGraphForFile } from './services/links.js';
@@ -159,6 +160,7 @@ async function main() {
   app.use('/api/notes-config', notesConfigRouter);
   app.use('/api/sheet', sheetRouter);
   app.use('/api/grokipedia', grokipediaRouter);
+  app.use('/api/dictionary', dictionaryRouter);
   app.use('/public/shares', publicSharesRouter); // shared-note content (NO auth)
   app.use('/share', sharePageRouter); // SSR public share page (NO auth, SEO/OG meta)
   app.use('/api', searchRouter); // /api/search, /api/tags, /api/backlinks, /api/graph...

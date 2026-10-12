@@ -232,27 +232,12 @@ function escapeHtml(s: string): string {
   ));
 }
 
-/** Wikipedia or Grokipedia address → the article title. Other links stay links. */
-function termFromHref(href: string): string | null {
-  let u: URL;
-  try { u = new URL(href, 'https://grokipedia.com'); } catch { return null; }
-  const host = u.hostname.replace(/^www\./, '');
-  let raw = '';
-  if (host === 'grokipedia.com' && u.pathname.startsWith('/page/')) raw = u.pathname.slice(6);
-  else if (host.endsWith('wikipedia.org')) {
-    if (u.pathname.startsWith('/wiki/')) raw = u.pathname.slice(6);
-    else raw = u.searchParams.get('title') || '';
-  }
-  try { raw = decodeURIComponent(raw); } catch { /* keep the raw title */ }
-  raw = raw.split('#')[0].replace(/_/g, ' ').trim();
-  return raw && raw.length <= 180 ? raw : null;
+/** Strip hyperlinks so books read cleanly without distracting links. */
+function stripLinks(html: string): string {
+  return html.replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, '$1');
 }
 
-function keywordAnchor(term: string, label: string): string {
-  return `<a href="#" class="book-keyword" data-grok="${escapeHtml(term)}">${escapeHtml(label)}</a>`;
-}
-
-/** `[[Term]]` and `[[Term|shown]]` become Grokipedia keywords. The rest stays text. */
+/** `[[Term]]` and `[[Term|shown]]` become clean plain text. No hyperlinks. */
 function renderMarkedText(text: string): string {
   const re = /\[\[([^\]|#]+?)(?:\|([^\]]+))?\]\]/g;
   let out = '';
@@ -262,20 +247,11 @@ function renderMarkedText(text: string): string {
     out += escapeHtml(text.slice(last, m.index));
     const term = m[1].trim();
     const label = (m[2] || m[1]).trim();
-    if (term) out += keywordAnchor(term, label);
-    else out += escapeHtml(m[0]);
+    out += escapeHtml(label || term);
     last = m.index + m[0].length;
   }
   out += escapeHtml(text.slice(last));
   return `<pre>${out}</pre>`;
-}
-
-function rewriteEncyclopediaLinks(html: string): string {
-  return html.replace(/<a\b([^>]*?)\shref=(["'])(https?:\/\/[^"']+)\2/gi, (full, pre, _q, href) => {
-    const term = termFromHref(href);
-    if (!term) return full;
-    return `<a${pre} href="#" class="book-keyword" data-grok="${escapeHtml(term)}"`;
-  });
 }
 
 async function docxToHtml(file: File): Promise<string> {
@@ -383,7 +359,12 @@ function readerCss(prefs: BooksPrefs, theme: string): string {
       -webkit-hyphens: ${prefs.hyphenate ? 'auto' : 'manual'};
       hyphens: ${prefs.hyphenate ? 'auto' : 'manual'};
     }
-    a:link { color: ${theme === 'light' ? '#8a5a12' : '#e8b86a'}; text-underline-offset: 2px; }
+    a, a:link, a:visited, a:hover, a:active {
+      color: inherit !important;
+      text-decoration: none !important;
+      cursor: text !important;
+      pointer-events: none !important;
+    }
     img, svg, video { max-width: 100%; height: auto; }
     pre { white-space: pre-wrap !important; }
   `;
@@ -438,8 +419,13 @@ export default function Books() {
   const [plainHtml, setPlainHtml] = useState('');
   const [marks, setMarks] = useState<Mark[]>([]);
   const [menu, setMenu] = useState<Menu | null>(null);
-  const [grok, setGrok] = useState<{ title: string; html: string; status: 'loading' | 'ok' | 'miss' | 'error' } | null>(null);
-  const [grokIn, setGrokIn] = useState(false);
+  const [lookupModal, setLookupModal] = useState<{
+    mode: 'dictionary' | 'grokipedia';
+    title: string;
+    html: string;
+    status: 'loading' | 'ok' | 'miss' | 'error';
+  } | null>(null);
+  const [lookupModalIn, setLookupModalIn] = useState(false);
   const [prefs, setPrefs] = useState<BooksPrefs>(() => readPrefs());
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('jr-shell-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
@@ -463,8 +449,9 @@ export default function Books() {
   const colorRef = useRef<Map<string, string>>(new Map());
   const prefsRef = useRef(prefs);
   const openMenuRef = useRef<(x: number, y: number, quote: string, location: string) => void>(() => {});
+  const openDictRef = useRef<(term: string) => void>(() => {});
   const openGrokRef = useRef<(term: string) => void>(() => {});
-  const grokOpenRef = useRef(false);
+  const lookupOpenRef = useRef(false);
   const addBookmarkRef = useRef<() => void>(() => {});
   const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
   const idleRef = useRef(0);
@@ -649,22 +636,44 @@ export default function Books() {
   };
   openMenuRef.current = openMenu;
 
-  const openGrok = useCallback((term: string) => {
-    const title = term.trim();
-    if (!title) return;
-    setGrok((cur) => {
-      if (!cur) requestAnimationFrame(() => setGrokIn(true));
-      return { title, html: '', status: 'loading' };
+  const cleanQuote = (q: string, maxWords = 6) => {
+    let s = q.trim().replace(/^["'“‘(«[<{]+|[)"'”’»\]>}:;,.!?]+$/g, '').trim();
+    const words = s.split(/\s+/);
+    if (words.length > maxWords) s = words.slice(0, maxWords).join(' ');
+    return s;
+  };
+
+  const openDict = useCallback((raw: string) => {
+    const term = cleanQuote(raw);
+    if (!term) return;
+    setLookupModal((cur) => {
+      if (!cur) requestAnimationFrame(() => setLookupModalIn(true));
+      return { mode: 'dictionary', title: term, html: '', status: 'loading' };
     });
-    api.grokipedia(title).then((r) => {
-      setGrok({ title: r.title || title, html: r.html || '', status: r.html ? 'ok' : 'miss' });
+    api.dictionary(term).then((r) => {
+      setLookupModal({ mode: 'dictionary', title: r.word || term, html: r.html || '', status: r.html ? 'ok' : 'miss' });
+    }).catch(() => {
+      setLookupModal({ mode: 'dictionary', title: term, html: '', status: 'miss' });
+    });
+  }, []);
+  openDictRef.current = openDict;
+
+  const openGrok = useCallback((raw: string) => {
+    const term = cleanQuote(raw);
+    if (!term) return;
+    setLookupModal((cur) => {
+      if (!cur) requestAnimationFrame(() => setLookupModalIn(true));
+      return { mode: 'grokipedia', title: term, html: '', status: 'loading' };
+    });
+    api.grokipedia(term).then((r) => {
+      setLookupModal({ mode: 'grokipedia', title: r.title || term, html: r.html || '', status: r.html ? 'ok' : 'miss' });
     }).catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : '';
-      setGrok({ title, html: '', status: /no grokipedia/i.test(msg) ? 'miss' : 'error' });
+      setLookupModal({ mode: 'grokipedia', title: term, html: '', status: /no grokipedia/i.test(msg) ? 'miss' : 'error' });
     });
   }, []);
   openGrokRef.current = openGrok;
-  grokOpenRef.current = grok !== null;
+  lookupOpenRef.current = lookupModal !== null;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -710,8 +719,8 @@ export default function Books() {
       if (dead) return;
       if (!FOLIATE_EXT.test(book.name)) {
         let html = '';
-        if (/\.docx$/i.test(book.name)) html = rewriteEncyclopediaLinks(await docxToHtml(file));
-        else if (/\.html?$/i.test(book.name)) html = rewriteEncyclopediaLinks((await file.text()).replace(/<script[\s\S]*?<\/script>/gi, ''));
+        if (/\.docx$/i.test(book.name)) html = stripLinks(await docxToHtml(file));
+        else if (/\.html?$/i.test(book.name)) html = stripLinks((await file.text()).replace(/<script[\s\S]*?<\/script>/gi, ''));
         else if (/\.rtf$/i.test(book.name)) html = renderMarkedText(rtfToText(await file.text()));
         else html = renderMarkedText(await file.text());
         if (dead) return;
@@ -747,17 +756,19 @@ export default function Books() {
         const doc = (ev as CustomEvent).detail?.doc as Document | undefined;
         const index = (ev as CustomEvent).detail?.index as number;
         if (!doc) return;
-        doc.addEventListener('mouseup', (e) => {
+        const onSel = (e: MouseEvent) => {
           const sel = doc.getSelection();
           const quote = sel?.toString() || '';
           if (!sel || !sel.rangeCount || quote.trim().length < 2) return;
+          if (e.type === 'contextmenu') e.preventDefault();
           let location = '';
           try { location = view.getCFI(index, sel.getRangeAt(0)); } catch { location = ''; }
           const frame = doc.defaultView?.frameElement as HTMLElement | null;
           const box = frame?.getBoundingClientRect();
-          const me = e as MouseEvent;
-          openMenuRef.current((box?.left || 0) + me.clientX, (box?.top || 0) + me.clientY, quote, location);
-        });
+          openMenuRef.current((box?.left || 0) + e.clientX, (box?.top || 0) + e.clientY, quote, location);
+        };
+        doc.addEventListener('mouseup', onSel);
+        doc.addEventListener('contextmenu', onSel);
         doc.addEventListener('click', (e) => {
           const t = e.target as HTMLElement | null;
           if (t?.closest?.('a[href]')) return;
@@ -781,11 +792,7 @@ export default function Books() {
         draw?.(Highlight, { color: colorRef.current.get(value) || COLORS[0].value });
       });
       view.addEventListener('external-link', (ev) => {
-        const href = String((ev as CustomEvent).detail?.href_ || '');
-        const term = termFromHref(href);
-        if (!term) return;
         ev.preventDefault();
-        openGrokRef.current(term);
       });
       view.addEventListener('show-annotation', (ev) => {
         const value = (ev as CustomEvent).detail?.value as string;
@@ -844,10 +851,20 @@ export default function Books() {
     const onUp = (e: MouseEvent) => {
       const root = sheetRef.current;
       if (!root || !root.contains(e.target as Node)) return;
-      if ((e.target as HTMLElement).closest?.('[data-grok], .gk-back')) return;
+      if ((e.target as HTMLElement).closest?.('.gk-back, .gk-dlg')) return;
       const sel = document.getSelection();
       const quote = sel?.toString() || '';
       if (quote.trim().length < 2) return;
+      openMenuRef.current(e.clientX, e.clientY, quote, 'quote:' + quote.trim().slice(0, 240));
+    };
+    const onContextMenu = (e: MouseEvent) => {
+      const root = sheetRef.current;
+      if (!root || !root.contains(e.target as Node)) return;
+      if ((e.target as HTMLElement).closest?.('.gk-back, .gk-dlg')) return;
+      const sel = document.getSelection();
+      const quote = sel?.toString() || '';
+      if (quote.trim().length < 2) return;
+      e.preventDefault();
       openMenuRef.current(e.clientX, e.clientY, quote, 'quote:' + quote.trim().slice(0, 240));
     };
     const onDown = (e: MouseEvent) => {
@@ -858,9 +875,9 @@ export default function Books() {
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (grokOpenRef.current) {
-          setGrok(null);
-          setGrokIn(false);
+        if (lookupOpenRef.current) {
+          setLookupModal(null);
+          setLookupModalIn(false);
           return;
         }
         setMenu(null);
@@ -882,10 +899,12 @@ export default function Books() {
       }
     };
     document.addEventListener('mouseup', onUp);
+    document.addEventListener('contextmenu', onContextMenu);
     document.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('contextmenu', onContextMenu);
       document.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey);
     };
@@ -1118,13 +1137,6 @@ export default function Books() {
         fill ? 'books-fill' : '',
         focused ? 'books-focused' : '',
       ].filter(Boolean).join(' ')}
-      onClick={(e) => {
-        const a = (e.target as HTMLElement).closest?.('[data-grok]') as HTMLElement | null;
-        if (!a) return;
-        e.preventDefault();
-        const term = a.getAttribute('data-grok') || '';
-        if (term) openGrok(term);
-      }}
     >
       {prefs.progressBar && book && (
         <div className="books-progress" aria-hidden="true">
@@ -1333,6 +1345,30 @@ export default function Books() {
           </div>
           {!menu.noting && (
             <>
+              <div className="book-menu-sep" />
+              <button
+                type="button"
+                className="book-menu-btn"
+                onClick={() => {
+                  const q = menu.quote;
+                  setMenu(null);
+                  openDict(q);
+                }}
+              >
+                <IconDictionary /> Look up in Dictionary
+              </button>
+              <button
+                type="button"
+                className="book-menu-btn"
+                onClick={() => {
+                  const q = menu.quote;
+                  setMenu(null);
+                  openGrok(q);
+                }}
+              >
+                <IconGrokipedia /> Look up in Grokipedia
+              </button>
+              <div className="book-menu-sep" />
               <button type="button" className="book-menu-note" onClick={() => setMenu({ ...menu, noting: true })}>
                 {menu.existing?.note ? 'Edit note' : 'Add note'}
               </button>
@@ -1368,32 +1404,53 @@ export default function Books() {
           )}
         </div>
       )}
-      {grok && (
+      {lookupModal && (
         <div
-          className={grokIn ? 'gk-back in' : 'gk-back'}
+          className={lookupModalIn ? 'gk-back in' : 'gk-back'}
           onMouseDown={(e) => {
             if (e.target !== e.currentTarget) return;
-            setGrok(null);
-            setGrokIn(false);
+            setLookupModal(null);
+            setLookupModalIn(false);
           }}
         >
-          <div className="gk-dlg" role="dialog" aria-modal="true" aria-label={grok.title}>
+          <div className="gk-dlg" role="dialog" aria-modal="true" aria-label={lookupModal.title}>
             <header className="gk-hd">
-              <h2>{grok.title}</h2>
+              <span className="gk-mode-badge">{lookupModal.mode === 'dictionary' ? 'Dictionary' : 'Grokipedia'}</span>
+              <h2>{lookupModal.title}</h2>
               <button
                 type="button"
                 className="gk-x"
                 aria-label="Close"
-                onClick={() => { setGrok(null); setGrokIn(false); }}
+                onClick={() => { setLookupModal(null); setLookupModalIn(false); }}
               >
                 ×
               </button>
             </header>
-            <div className="gk-body">
-              {grok.status === 'loading' && <p className="gk-status">Opening…</p>}
-              {grok.status === 'miss' && <p className="gk-status">No Grokipedia page for this.</p>}
-              {grok.status === 'error' && <p className="gk-status">Could not open that page.</p>}
-              {grok.status === 'ok' && <div dangerouslySetInnerHTML={{ __html: grok.html }} />}
+            <div
+              className="gk-body"
+              onClick={(e) => {
+                if (lookupModal.mode !== 'grokipedia') return;
+                const a = (e.target as HTMLElement).closest?.('.gk-link[data-grok]') as HTMLElement | null;
+                if (!a) return;
+                e.preventDefault();
+                const term = a.getAttribute('data-grok') || '';
+                if (term) openGrok(term);
+              }}
+            >
+              {lookupModal.status === 'loading' && (
+                <p className="gk-status">{lookupModal.mode === 'dictionary' ? 'Looking up…' : 'Opening…'}</p>
+              )}
+              {lookupModal.status === 'miss' && (
+                <p className="gk-status">
+                  {lookupModal.mode === 'dictionary' ? 'No dictionary definition found.' : 'No Grokipedia page for this.'}
+                </p>
+              )}
+              {lookupModal.status === 'error' && (
+                <p className="gk-status">
+                  {lookupModal.mode === 'dictionary' ? 'Could not load definition.' : 'Could not open that page.'}
+                </p>
+              )}
+              {lookupModal.status === 'ok' && <div dangerouslySetInnerHTML={{ __html: lookupModal.html }} />}
             </div>
           </div>
         </div>
@@ -1498,5 +1555,25 @@ function IconMarks() {
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
     </ToolIcon>
+  );
+}
+
+function IconDictionary() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" />
+      <path d="M8 7h8" />
+      <path d="M8 11h8" />
+    </svg>
+  );
+}
+
+function IconGrokipedia() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
   );
 }

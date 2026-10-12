@@ -146,6 +146,10 @@ export const api = {
     req<{ ok: boolean; title: string; html: string }>(
       `/api/grokipedia?title=${encodeURIComponent(title)}`,
     ),
+  dictionary: (word: string) =>
+    req<{ ok: boolean; word: string; html: string }>(
+      `/api/dictionary?word=${encodeURIComponent(word)}`,
+    ),
 
   // search & links
   // limit omitted → server returns every match (panel renders them incrementally)
