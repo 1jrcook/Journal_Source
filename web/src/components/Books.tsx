@@ -452,6 +452,7 @@ export default function Books() {
   const openDictRef = useRef<(term: string) => void>(() => {});
   const openGrokRef = useRef<(term: string) => void>(() => {});
   const lookupOpenRef = useRef(false);
+  const menuOpenRef = useRef(false);
   const addBookmarkRef = useRef<() => void>(() => {});
   const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
   const idleRef = useRef(0);
@@ -459,6 +460,7 @@ export default function Books() {
   colorRef.current = new Map(marks.map((m) => [m.location, colorValue(m.color)]));
   prefsRef.current = prefs;
   marksLive.current = marks;
+  menuOpenRef.current = menu !== null;
 
   const books = useMemo(() => shelfBooks(tree), [tree]);
   const book = books.find((b) => b.path === bookPath) || null;
@@ -756,10 +758,21 @@ export default function Books() {
         const doc = (ev as CustomEvent).detail?.doc as Document | undefined;
         const index = (ev as CustomEvent).detail?.index as number;
         if (!doc) return;
+        let dismissClick = false;
+        const onDocDown = (e: MouseEvent | TouchEvent) => {
+          if ('button' in e && e.button !== 0) return;
+          if (menuOpenRef.current) {
+            dismissClick = true;
+            setMenu(null);
+          }
+        };
+        doc.addEventListener('mousedown', onDocDown, true);
+        doc.addEventListener('touchstart', onDocDown, { capture: true, passive: true });
         const onSel = (e: MouseEvent) => {
           const sel = doc.getSelection();
           const quote = sel?.toString() || '';
           if (!sel || !sel.rangeCount || quote.trim().length < 2) return;
+          dismissClick = false;
           if (e.type === 'contextmenu') e.preventDefault();
           let location = '';
           try { location = view.getCFI(index, sel.getRangeAt(0)); } catch { location = ''; }
@@ -770,10 +783,16 @@ export default function Books() {
         doc.addEventListener('mouseup', onSel);
         doc.addEventListener('contextmenu', onSel);
         doc.addEventListener('click', (e) => {
+          const wasDismiss = dismissClick;
+          dismissClick = false;
           const t = e.target as HTMLElement | null;
-          if (t?.closest?.('a[href]')) return;
+          if (t?.closest?.('a[href]')) {
+            if (wasDismiss) e.preventDefault();
+            return;
+          }
           const sel = doc.getSelection();
           if (sel && sel.toString().trim().length >= 2) return;
+          if (wasDismiss) return;
           if (!prefsRef.current.tapZones) return;
           const w = doc.documentElement.clientWidth || 1;
           const x = (e as MouseEvent).clientX;
@@ -781,6 +800,17 @@ export default function Books() {
           else if (x > w * 0.86) view.goRight();
         });
         doc.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            if (lookupOpenRef.current) {
+              setLookupModal(null);
+              setLookupModalIn(false);
+              return;
+            }
+            if (menuOpenRef.current) {
+              setMenu(null);
+              return;
+            }
+          }
           if (e.key === 'ArrowLeft') { e.preventDefault(); view.goLeft(); }
           else if (e.key === 'ArrowRight') { e.preventDefault(); view.goRight(); }
         });
@@ -868,9 +898,16 @@ export default function Books() {
       openMenuRef.current(e.clientX, e.clientY, quote, 'quote:' + quote.trim().slice(0, 240));
     };
     const onDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
       if (menuRef.current?.contains(e.target as Node)) return;
       const t = e.target as HTMLElement | null;
-      if (t?.closest?.('.books-flyout, .books-tool, .books-lib')) return;
+      if (t?.closest?.('.books-flyout')) return;
+      setMenu(null);
+    };
+    const onTouch = (e: TouchEvent) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('.books-flyout')) return;
       setMenu(null);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -901,11 +938,13 @@ export default function Books() {
     document.addEventListener('mouseup', onUp);
     document.addEventListener('contextmenu', onContextMenu);
     document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onTouch, { passive: true });
     window.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mouseup', onUp);
       document.removeEventListener('contextmenu', onContextMenu);
       document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onTouch);
       window.removeEventListener('keydown', onKey);
     };
   }, []);
