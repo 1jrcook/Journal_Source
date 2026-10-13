@@ -98,13 +98,18 @@ async function main() {
           workerSrc: ["'self'", 'blob:'],
           baseUri: ["'self'"],
           formAction: ["'self'"],
-          frameAncestors: ["'none'"],
+          // Phone shell iframes Mind. 'none' is ERR_BLOCKED_BY_RESPONSE.
+          frameAncestors: ["'self'", "https://chat.jrcookgroup.com"],
           upgradeInsecureRequests: null,
         },
       },
       // Allow social crawlers / other sites to load public share og:images.
       crossOriginEmbedderPolicy: false,
       crossOriginResourcePolicy: { policy: 'cross-origin' },
+      // COOP same-origin and X-Frame-Options also refuse that iframe.
+      crossOriginOpenerPolicy: false,
+      originAgentCluster: false,
+      frameguard: false,
     }),
   );
 
