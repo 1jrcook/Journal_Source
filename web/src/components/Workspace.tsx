@@ -78,6 +78,7 @@ export default function Workspace() {
   const setMobileDrawer = useStore((s) => s.setMobileDrawer);
   const isMobile = useIsMobile();
   const booksOpen = useStore((s) => s.booksOpen);
+  const setBooksOpen = useStore((s) => s.setBooksOpen);
   const newNote = useStore((s) => s.newNote);
   const setTemplatePicker = useStore((s) => s.setTemplatePicker);
   const goBack = useStore((s) => s.goBack);
@@ -322,6 +323,11 @@ export default function Workspace() {
         >
           <Icon name={isMobile ? 'menu' : 'panel-left'} size={isMobile ? 20 : 16} />
         </span>
+        {isMobile && (
+          <button type="button" className="tab-books" onClick={() => { setMobileDrawer(null); setBooksOpen(true); }}>
+            Books
+          </button>
+        )}
         <div className="tab-scroll">
           {tabs.map((t) => (
             <div

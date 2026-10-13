@@ -139,6 +139,17 @@ function uniqueChildName(tree: TreeNode | null, targetDir: string, base: string)
   return name;
 }
 
+function isShelfBook(p: string): boolean {
+  return /^Library\/Ebooks\//.test(p) && /\.(epub|mobi|azw3?|fb2|fbz|cbz|pdf|txt|text|html?|docx|rtf|md|markdown)$/i.test(p);
+}
+
+function openShelfBook(p: string) {
+  (window as unknown as { __jrOpenBook?: string }).__jrOpenBook = p;
+  useStore.getState().setBooksOpen(true);
+  useStore.getState().setMobileDrawer(null);
+  window.dispatchEvent(new CustomEvent('jr-open-book', { detail: p }));
+}
+
 function Node({ node, depth }: { node: TreeNode; depth: number }) {
   const expanded = useStore((s) => s.expanded);
   const toggleFolder = useStore((s) => s.toggleFolder);
@@ -198,6 +209,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
     setSelected([node.path]);
     setSelectAnchor(node.path);
     if (isFolder) toggleFolder(node.path);
+    else if (isShelfBook(node.path)) openShelfBook(node.path);
     else openFile(node.path);
   };
 
@@ -337,7 +349,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
           { label: 'Delete', danger: true, onClick: doDelete },
         ]
       : [
-          { label: 'Open', onClick: () => openFile(node.path) },
+          { label: 'Open', onClick: () => (isShelfBook(node.path) ? openShelfBook(node.path) : openFile(node.path)) },
           { label: 'Open in new tab', onClick: () => openFile(node.path, { newTab: true }) },
           { label: 'Open to the right', onClick: () => openToSide(node.path) },
           { label: '', separator: true },

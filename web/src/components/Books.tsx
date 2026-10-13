@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import type { TreeNode } from '../lib/api';
 import { useStore } from '../lib/store';
 import { findNode } from '../lib/tree';
 
-const BOOK_EXT = /\.(epub|mobi|azw3?|fb2|fbz|cbz|pdf|txt|text|html?|docx|rtf)$/i;
+const BOOK_EXT = /\.(epub|mobi|azw3?|fb2|fbz|cbz|pdf|txt|text|html?|docx|rtf|md|markdown)$/i;
 const FOLIATE_EXT = /\.(epub|mobi|azw3?|fb2|fbz|cbz|pdf)$/i;
 const SHELF = 'Library/Ebooks';
 const READING = 'Reading';
@@ -18,7 +18,7 @@ const COLORS = [
 ] as const;
 
 type ColorId = (typeof COLORS)[number]['id'];
-type BookFile = { path: string; name: string };
+type BookFile = { path: string; name: string; mtime?: number };
 type Mark = { quote: string; location: string; color: ColorId; path: string; note: string };
 type Bookmark = { cfi: string; label: string; at: string };
 type TocItem = { label?: string; href?: string; subitems?: TocItem[] };
@@ -156,11 +156,79 @@ function collectFiles(node: TreeNode | null, out: TreeNode[] = []): TreeNode[] {
   return out;
 }
 
+// Books are kept in the browser's Cache Storage, keyed by path + modified time: reopening a book is instant, and a
+// changed file is fetched fresh (older copies of the same book are dropped).
+const BOOK_CACHE = 'jr-books-v1';
+type Progress = (stage: string, pct?: number) => void;
+const bookKey = (book: BookFile) => `/__jr-book?p=${encodeURIComponent(book.path)}&m=${book.mtime || 0}`;
+async function openBookCache(): Promise<Cache | null> {
+  try { return await caches.open(BOOK_CACHE); } catch { return null; }
+}
+async function isBookCached(book: BookFile): Promise<boolean> {
+  const c = await openBookCache();
+  try { return !!(c && await c.match(bookKey(book))); } catch { return false; }
+}
+async function bookBlob(book: BookFile, onProgress?: Progress): Promise<Blob> {
+  const key = bookKey(book);
+  const cache = await openBookCache();
+  if (cache) {
+    try { const hit = await cache.match(key); if (hit) { onProgress?.('Opening from this device'); return await hit.blob(); } } catch { /* fall through */ }
+  }
+  onProgress?.('Downloading book', 0);
+  const res = await fetch(api.rawUrl(book.path), { credentials: 'include' });
+  if (!res.ok) throw new Error('Could not read the file');
+  const total = Number(res.headers.get('content-length')) || 0;
+  let blob: Blob;
+  if (res.body && total) {
+    const reader = res.body.getReader();
+    const chunks: BlobPart[] = [];
+    let got = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value); got += value.length;
+      onProgress?.('Downloading book', Math.min(99, Math.round((got * 100) / total)));
+    }
+    blob = new Blob(chunks, { type: res.headers.get('content-type') || 'application/octet-stream' });
+  } else {
+    blob = await res.blob();
+  }
+  if (cache) {
+    try {
+      const prefix = `/__jr-book?p=${encodeURIComponent(book.path)}&`;
+      for (const r of await cache.keys()) { const u = new URL(r.url); if ((u.pathname + u.search).startsWith(prefix)) await cache.delete(r); }
+      await cache.put(key, new Response(blob, { headers: { 'Content-Type': blob.type || 'application/octet-stream' } }));
+    } catch { /* storage full or unavailable: reading still works */ }
+  }
+  return blob;
+}
+
+// Reading state (last page + bookmarks) lives on the server so every device resumes in the same place; the book
+// file itself stays on each device (JR, 2026-10-13).
+type ReadingState = { cfi?: string; fraction?: number; bookmarks?: Bookmark[]; updatedAt?: number };
+async function fetchReadingState(p: string, ms = 4000): Promise<ReadingState | null> {
+  const ctl = new AbortController();
+  const t = window.setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(`/api/reading-state?path=${encodeURIComponent(p)}`, { credentials: 'include', signal: ctl.signal });
+    return r.ok ? ((await r.json()) as ReadingState | null) : null;
+  } catch { return null; } finally { window.clearTimeout(t); }
+}
+function pushReadingState(p: string, patch: ReadingState) {
+  const at = Date.now();
+  try { localStorage.setItem('jr-book-at:' + p, String(at)); } catch { /* ignore */ }
+  fetch('/api/reading-state', { method: 'PUT', credentials: 'include', keepalive: true, headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: p, ...patch, updatedAt: at }) }).catch(() => {});
+}
+function localReadAt(p: string): number {
+  try { return Number(localStorage.getItem('jr-book-at:' + p) || '0'); } catch { return 0; }
+}
+
 function shelfBooks(tree: TreeNode | null): BookFile[] {
   const out: BookFile[] = [];
   const walk = (node: TreeNode | null) => {
     if (!node) return;
-    if (node.type === 'file' && BOOK_EXT.test(node.name)) out.push({ path: node.path, name: node.name });
+    if (node.type === 'file' && BOOK_EXT.test(node.name)) out.push({ path: node.path, name: node.name, mtime: node.mtime });
     node.children?.forEach(walk);
   };
   walk(findNode(tree, SHELF));
@@ -389,8 +457,9 @@ function loadBookmarks(bookPath: string): Bookmark[] {
   }
 }
 
-function saveBookmarks(bookPath: string, list: Bookmark[]) {
+function saveBookmarks(bookPath: string, list: Bookmark[], sync = true) {
   try { localStorage.setItem('jr-book-bm:' + bookPath, JSON.stringify(list)); } catch { /* ignore */ }
+  if (sync) pushReadingState(bookPath, { bookmarks: list });
 }
 
 function etaLabel(fraction: number, wpm: number): string {
@@ -416,6 +485,7 @@ export default function Books() {
   const [fraction, setFraction] = useState(0);
   const [chapter, setChapter] = useState('');
   const [status, setStatus] = useState('');
+  const [loading, setLoading] = useState<{ stage: string; pct?: number } | null>(null);
   const [plainHtml, setPlainHtml] = useState('');
   const [marks, setMarks] = useState<Mark[]>([]);
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -439,6 +509,9 @@ export default function Books() {
   const rootRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
   const [collapsed, setCollapsed] = useState(() => storedOn('jr-books-collapsed', false));
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches);
+  // On a phone there is no pointer to hover the left edge, so the shelf is the screen until a book is open.
+  const [phoneList, setPhoneList] = useState(true);
   const [peek, setPeek] = useState(false);
   const [holdShut, setHoldShut] = useState(false);
   const [fill, setFill] = useState(false);
@@ -465,12 +538,14 @@ export default function Books() {
   const books = useMemo(() => shelfBooks(tree), [tree]);
   const book = books.find((b) => b.path === bookPath) || null;
   const autoHide = prefs.autoHideShelf;
-  const showLib = book && autoHide ? peek && !holdShut : !collapsed;
+  const showLib = phone ? phoneList : (book && autoHide ? peek && !holdShut : !collapsed);
   const expanded = full || fill;
 
   useEffect(() => {
     const sync = () => {
-      setPrefs(readPrefs());
+      // Only a real change counts: a fresh object every 4 s used to restyle and re-paginate the open book (JR, 2026-10-13).
+      const next = readPrefs();
+      setPrefs((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next));
       try {
         const t = localStorage.getItem('jr-shell-theme');
         if (t === 'light' || t === 'dark') setTheme(t);
@@ -496,6 +571,56 @@ export default function Books() {
   useEffect(() => {
     try { localStorage.setItem('jr-books-collapsed', collapsed ? '1' : '0'); } catch { /* ignore */ }
   }, [collapsed]);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const onChange = () => setPhone(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  useEffect(() => {
+    if (phone && !bookPath) setPhoneList(true);
+  }, [phone, bookPath]);
+
+  useEffect(() => {
+    const take = (p: unknown) => {
+      if (typeof p !== 'string' || !p) return;
+      setBookPath(p);
+      if (window.matchMedia('(max-width: 768px)').matches) setPhoneList(false);
+    };
+    const pending = (window as unknown as { __jrOpenBook?: string }).__jrOpenBook;
+    if (pending) {
+      (window as unknown as { __jrOpenBook?: string }).__jrOpenBook = '';
+      take(pending);
+    }
+    const onOpen = (e: Event) => take((e as CustomEvent).detail);
+    window.addEventListener('jr-open-book', onOpen);
+    return () => window.removeEventListener('jr-open-book', onOpen);
+  }, []);
+
+  // Warm the book engine in the background while the shelf is up, so opening a book doesn't wait on a chain of
+  // module downloads (each one is a ~220 ms round trip from Thailand to the server).
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      for (const u of ['/foliate/view.js', '/foliate/overlayer.js', '/foliate/epub.js', '/foliate/vendor/zip.js']) loadModule(u).catch(() => {});
+    }, 1200);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  // Download every book on the shelf to this device in the background (one at a time), so even a first open is local.
+  useEffect(() => {
+    let stop = false;
+    const id = window.setTimeout(async () => {
+      for (const b of books) {
+        if (stop) return;
+        if (/\.(txt|text|md|markdown)$/i.test(b.name) || await isBookCached(b)) continue;
+        try { await bookBlob(b); } catch { /* try again next time */ }
+      }
+    }, 5000);
+    return () => { stop = true; window.clearTimeout(id); };
+  }, [books]);
 
   useEffect(() => {
     const onChange = () => setFull(document.fullscreenElement === rootRef.current);
@@ -551,9 +676,11 @@ export default function Books() {
     bump();
     window.addEventListener('mousemove', bump);
     window.addEventListener('keydown', bump);
+    window.addEventListener('touchstart', bump, { passive: true });
     return () => {
       window.removeEventListener('mousemove', bump);
       window.removeEventListener('keydown', bump);
+      window.removeEventListener('touchstart', bump);
       window.clearTimeout(idleRef.current);
     };
   }, [prefs.focusMode, book]);
@@ -626,8 +753,8 @@ export default function Books() {
     const known = marks.find((m) => (m.location && location && m.location === location)
       || (m.quote && text && m.quote.replace(/\s+/g, ' ') === text.replace(/\s+/g, ' ')));
     setMenu({
-      x: Math.max(8, Math.min(x, window.innerWidth - 300)),
-      y: Math.max(8, Math.min(y + 10, window.innerHeight - 260)),
+      x,
+      y,
       quote: text || known?.quote || '',
       location: location || known?.location || '',
       color: known?.color || 'yellow',
@@ -637,6 +764,26 @@ export default function Books() {
     });
   };
   openMenuRef.current = openMenu;
+
+  // Measure the menu after it renders and keep it fully on screen: centred on the selection, below it if there is room,
+  // otherwise above; it wraps to two rows on narrow windows (JR, 2026-10-13).
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!menu) { setMenuPos(null); return; }
+    const place = () => {
+      const el = menuRef.current; if (!el) return;
+      const M = 8, GAP = 12, vw = window.innerWidth, vh = window.innerHeight;
+      el.style.maxWidth = `${vw - 2 * M}px`;
+      const { width: w, height: h } = el.getBoundingClientRect();
+      const left = Math.max(M, Math.min(menu.x - w / 2, vw - w - M));
+      const below = menu.y + GAP, above = menu.y - GAP - h;
+      const top = below + h <= vh - M ? below : above >= M ? above : Math.max(M, vh - h - M);
+      setMenuPos((p) => (p && p.left === left && p.top === top ? p : { left, top }));
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [menu?.x, menu?.y, menu?.noting, !!menu?.existing]);
 
   const cleanQuote = (q: string, maxWords = 6) => {
     let s = q.trim().replace(/^["'“‘(«[<{]+|[)"'”’»\]>}:;,.!?]+$/g, '').trim();
@@ -707,16 +854,35 @@ export default function Books() {
     viewRef.current = null;
     if (host) host.replaceChildren();
 
+    // Mouse wheel turns pages (one turn per flick); works over the page and its margins.
+    let wheelAcc = 0, wheelLast = 0, wheelIdle = 0;
+    const onWheelTurn = (e: WheelEvent) => {
+      const v = viewRef.current as unknown as { next?: () => unknown; prev?: () => unknown } | null;
+      if (!v || prefsRef.current.flow !== 'paginated' || e.ctrlKey) return;
+      e.preventDefault();
+      const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      window.clearTimeout(wheelIdle);
+      wheelIdle = window.setTimeout(() => { wheelAcc = 0; }, 220);
+      const now = Date.now();
+      if (now - wheelLast < 380) return;
+      wheelAcc += e.deltaMode === 1 ? d * 30 : d;
+      if (Math.abs(wheelAcc) < 30) return;
+      wheelLast = now;
+      const dir = wheelAcc; wheelAcc = 0;
+      void (dir > 0 ? v.next?.() : v.prev?.());
+    };
+    host?.addEventListener('wheel', onWheelTurn, { passive: false });
+    let syncTimer = 0;
+    const remoteP = fetchReadingState(book.path);
+    setLoading({ stage: 'Opening your book' });
     (async () => {
       let file: File;
-      if (/\.(txt|text)$/i.test(book.name)) {
+      if (/\.(txt|text|md|markdown)$/i.test(book.name)) {
         const r = await api.read(book.path);
         const content = typeof r === 'string' ? r : r.content;
         file = new File([content], book.name);
       } else {
-        const res = await fetch(api.rawUrl(book.path), { credentials: 'include' });
-        if (!res.ok) throw new Error('Could not read the file');
-        file = new File([await res.blob()], book.name);
+        file = new File([await bookBlob(book, (stage, pct) => { if (!dead) setLoading({ stage, pct }); })], book.name);
       }
       if (dead) return;
       if (!FOLIATE_EXT.test(book.name)) {
@@ -727,6 +893,7 @@ export default function Books() {
         else html = renderMarkedText(await file.text());
         if (dead) return;
         setPlainHtml(html);
+        setLoading(null);
         await loadMarks(folderRef.current);
         try {
           const saved = Number(localStorage.getItem('jr-book-scroll:' + book.path) || '0');
@@ -736,6 +903,7 @@ export default function Books() {
         } catch { /* ignore */ }
         return;
       }
+      setLoading({ stage: 'Preparing the reader' });
       await loadModule('/foliate/view.js');
       const over = await loadModule('/foliate/overlayer.js');
       const Highlight = (over.Overlayer as { highlight: unknown }).highlight;
@@ -751,7 +919,10 @@ export default function Books() {
         if (ch) setChapter(String(ch));
         const cfi = detail.cfi as string | undefined;
         if (cfi) {
-          try { localStorage.setItem('jr-book:' + book.path, cfi); } catch { /* ignore */ }
+          try { localStorage.setItem('jr-book:' + book.path, cfi); localStorage.setItem('jr-book-at:' + book.path, String(Date.now())); } catch { /* ignore */ }
+          const frac = typeof detail.fraction === 'number' ? detail.fraction : undefined;
+          window.clearTimeout(syncTimer);
+          syncTimer = window.setTimeout(() => pushReadingState(book.path, { cfi, fraction: frac }), 2500);
         }
       });
       view.addEventListener('load', (ev) => {
@@ -781,6 +952,7 @@ export default function Books() {
           openMenuRef.current((box?.left || 0) + e.clientX, (box?.top || 0) + e.clientY, quote, location);
         };
         doc.addEventListener('mouseup', onSel);
+        doc.addEventListener('wheel', onWheelTurn, { passive: false });
         doc.addEventListener('contextmenu', onSel);
         doc.addEventListener('click', (e) => {
           const wasDismiss = dismissClick;
@@ -813,6 +985,9 @@ export default function Books() {
           }
           if (e.key === 'ArrowLeft') { e.preventDefault(); view.goLeft(); }
           else if (e.key === 'ArrowRight') { e.preventDefault(); view.goRight(); }
+          else if (e.key === 'PageDown' || e.key === 'ArrowDown') { e.preventDefault(); void (view as unknown as { next: () => unknown }).next(); }
+          else if (e.key === 'PageUp' || e.key === 'ArrowUp') { e.preventDefault(); void (view as unknown as { prev: () => unknown }).prev(); }
+          else if ((e.key === 'b' || e.key === 'B') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addBookmarkRef.current(); }
         });
       });
       view.addEventListener('draw-annotation', (ev) => {
@@ -829,6 +1004,7 @@ export default function Books() {
         const hit = marksLive.current.find((m) => m.location === value);
         openMenuRef.current(window.innerWidth / 2 - 120, 80, hit?.quote || '', value);
       });
+      setLoading({ stage: 'Opening' });
       await view.open(file);
       if (dead) { view.close?.(); return; }
       const metaTitle = textOf(view.book?.metadata?.title) || stem;
@@ -838,19 +1014,35 @@ export default function Books() {
       setAuthor(metaAuthor);
       setToc(flattenToc(view.book?.toc));
       applyStyles(view);
-      const saved = prefsRef.current.resumeLast
+      let saved = prefsRef.current.resumeLast
         ? (() => { try { return localStorage.getItem('jr-book:' + book.path) || ''; } catch { return ''; } })()
         : '';
+      // Another device read further (or more recently): resume there. Bookmarks from every device are merged.
+      const remote = await remoteP;
+      if (dead) { view.close?.(); return; }
+      if (remote && prefsRef.current.resumeLast && remote.cfi && (remote.updatedAt || 0) > localReadAt(book.path)) saved = remote.cfi;
+      if (remote && Array.isArray(remote.bookmarks) && remote.bookmarks.length) {
+        const merged = [...remote.bookmarks, ...loadBookmarks(book.path)]
+          .filter((b, i, arr) => b && b.cfi && arr.findIndex((x) => x.cfi === b.cfi) === i)
+          .sort((a, b2) => String(b2.at).localeCompare(String(a.at))).slice(0, 40);
+        setBookmarks(merged);
+        saveBookmarks(book.path, merged, false);
+      }
       try {
         await view.init({ lastLocation: saved || undefined, showTextStart: !saved });
       } catch { /* the first page is already up */ }
       applyStyles(view);
+      setLoading(null);
+      try { host?.setAttribute('tabindex', '-1'); host?.focus({ preventScroll: true }); } catch { /* ignore */ }
       await loadMarks(folderRef.current);
     })().catch((e: Error) => {
-      if (!dead) setStatus(e?.message || 'Could not open this book');
+      if (!dead) { setLoading(null); setStatus(e?.message || 'Could not open this book'); }
     });
     return () => {
       dead = true;
+      window.clearTimeout(syncTimer);
+      host?.removeEventListener('wheel', onWheelTurn);
+      setLoading(null);
       viewRef.current?.close?.();
       viewRef.current = null;
     };
@@ -1172,11 +1364,19 @@ export default function Books() {
       ref={rootRef}
       className={[
         'books',
-        !showLib ? 'lib-shut' : '',
+        phone ? 'is-phone' : '',
+        phone && phoneList ? 'phone-list' : '',
+        phone && !phoneList ? 'phone-read' : '',
+        !phone && !showLib ? 'lib-shut' : '',
         fill ? 'books-fill' : '',
         focused ? 'books-focused' : '',
       ].filter(Boolean).join(' ')}
     >
+      {phone && book && !phoneList && (
+        <button type="button" className="books-phone-back" onClick={() => setPhoneList(true)}>
+          Books
+        </button>
+      )}
       {prefs.progressBar && book && (
         <div className="books-progress" aria-hidden="true">
           <i style={{ width: `${progressPct}%` }} />
@@ -1193,7 +1393,7 @@ export default function Books() {
           <div className="books-lib-tools">
             <button
               type="button"
-              className={autoHide ? 'books-tool on' : 'books-tool'}
+              className={autoHide ? 'books-tool books-desk-only on' : 'books-tool books-desk-only'}
               title={autoHide ? 'List opens when the pointer is at the left edge' : 'Hide the list until the pointer is at the left edge'}
               aria-pressed={autoHide}
               onClick={() => {
@@ -1204,14 +1404,14 @@ export default function Books() {
             >
               <IconHover />
             </button>
-            <button type="button" className="books-tool" title="Hide book list" aria-label="Hide book list" onClick={hideLib}>
+            <button type="button" className="books-tool books-desk-only" title="Hide book list" aria-label="Hide book list" onClick={hideLib}>
               <IconHide />
             </button>
             <label className="books-add" title="Add a book">
               <IconPlus />
               <input
                 type="file"
-                accept=".epub,.mobi,.azw,.azw3,.fb2,.fbz,.cbz,.pdf,.txt,.html,.htm,.docx,.rtf"
+                accept=".epub,.mobi,.azw,.azw3,.fb2,.fbz,.cbz,.pdf,.txt,.html,.htm,.docx,.rtf,.md,.markdown"
                 onChange={(e) => onUpload(e.target.files)}
               />
             </label>
@@ -1229,7 +1429,7 @@ export default function Books() {
                 type="button"
                 className="books-lib-open"
                 title={shelfLabel(b.name)}
-                onClick={() => setBookPath(b.path)}
+                onClick={() => { setBookPath(b.path); if (phone) setPhoneList(false); }}
               >
                 {shelfLabel(b.name)}
               </button>
@@ -1280,6 +1480,13 @@ export default function Books() {
         )}
         {!book && !status && <div className="books-empty big">Choose a book. Select a passage to highlight it, or to leave a note.</div>}
         {status && <div className="books-status">{status}</div>}
+        {loading && (
+          <div className="books-loading" role="status" aria-live="polite">
+            <span className="books-spin" aria-hidden="true" />
+            <span className="books-loading-text">{loading.stage}{typeof loading.pct === 'number' ? ` · ${loading.pct}%` : '…'}</span>
+            {typeof loading.pct === 'number' && <i className="books-loadbar"><b style={{ width: `${loading.pct}%` }} /></i>}
+          </div>
+        )}
         <div ref={hostRef} className="books-foliate" hidden={!book || !!plainHtml} />
         {plainHtml && (
           <div
@@ -1364,7 +1571,7 @@ export default function Books() {
         <div
           ref={menuRef}
           className={menu.noting ? 'book-menu noting' : 'book-menu'}
-          style={{ left: menu.x, top: menu.y }}
+          style={{ left: menuPos?.left ?? menu.x, top: menuPos?.top ?? menu.y, visibility: menuPos ? 'visible' : 'hidden' }}
           onMouseDown={(e) => e.preventDefault()}
         >
           <div className="book-swatches">

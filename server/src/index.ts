@@ -13,7 +13,7 @@ import chokidar from 'chokidar';
 import { config } from './config.js';
 import { loadSettings, getSettings, setPasswordIfInitial } from './bootstrap.js';
 import { errorHandler } from './middleware/error.js';
-import { COOKIE_NAME } from './middleware/auth.js';
+import { COOKIE_NAME, requireAuth } from './middleware/auth.js';
 import { verifyToken } from './services/auth.js';
 import { authRouter } from './routes/auth.js';
 import { filesRouter } from './routes/files.js';
@@ -168,12 +168,56 @@ async function main() {
   app.use('/api/dictionary', dictionaryRouter);
   app.use('/public/shares', publicSharesRouter); // shared-note content (NO auth)
   app.use('/share', sharePageRouter); // SSR public share page (NO auth, SEO/OG meta)
+  // Reading state (last page + bookmarks per book), shared by every device (JR, 2026-10-13).
+  const readingFile = path.join(config.dataDir, 'reading-state.json');
+  type ReadState = { cfi?: string; fraction?: number; bookmarks?: unknown[]; updatedAt?: number };
+  let readingState: Record<string, ReadState> | null = null;
+  const loadReading = async (): Promise<Record<string, ReadState>> => {
+    if (readingState) return readingState;
+    try { readingState = JSON.parse(await fs.readFile(readingFile, 'utf8')) as Record<string, ReadState>; } catch { readingState = {}; }
+    return readingState;
+  };
+  let readingWrite: Promise<void> = Promise.resolve();
+  app.get('/api/reading-state', requireAuth, async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const all = await loadReading();
+    const p = typeof req.query.path === 'string' ? req.query.path : '';
+    res.json(p ? all[p] ?? null : all);
+  });
+  app.put('/api/reading-state', requireAuth, async (req, res) => {
+    const { path: p, cfi, fraction, bookmarks, updatedAt } = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof p !== 'string' || !p || p.length > 1000) { res.status(400).json({ error: 'path required' }); return; }
+    const all = await loadReading();
+    const cur = all[p] ?? {};
+    const at = typeof updatedAt === 'number' ? updatedAt : Date.now();
+    const next: ReadState = { ...cur };
+    // position: newest wins (a device that read further, later, is the truth); bookmarks: always the latest list sent
+    if (typeof cfi === 'string' && at >= (cur.updatedAt ?? 0)) { next.cfi = cfi.slice(0, 2000); if (typeof fraction === 'number') next.fraction = fraction; next.updatedAt = at; }
+    if (Array.isArray(bookmarks)) next.bookmarks = bookmarks.slice(0, 60);
+    all[p] = next;
+    readingWrite = readingWrite.then(async () => {
+      const tmp = readingFile + '.tmp';
+      await fs.writeFile(tmp, JSON.stringify(all));
+      await fs.rename(tmp, readingFile);
+    }).catch(() => {});
+    await readingWrite;
+    res.json(next);
+  });
   app.use('/api', searchRouter); // /api/search, /api/tags, /api/backlinks, /api/graph...
 
   // Static SPA (built into server/public)
   const publicDir = path.join(__dirname, '..', 'public');
   if (await dirExists(publicDir)) {
-    app.use(express.static(publicDir));
+    // Hashed app files never change; the book engine (foliate) changes rarely. Let the browser keep them instead of
+    // re-downloading or re-checking each one on every book open (~220 ms per round trip from Thailand). index.html stays fresh.
+    app.use(express.static(publicDir, {
+      setHeaders: (res, filePath) => {
+        const rel = path.relative(publicDir, filePath).split(path.sep).join('/');
+        if (rel.startsWith('assets/')) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        else if (rel.startsWith('foliate/')) res.setHeader('Cache-Control', 'public, max-age=604800');
+        else if (rel === 'index.html') res.setHeader('Cache-Control', 'no-cache');
+      },
+    }));
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/public')) return next();
       res.sendFile(path.join(publicDir, 'index.html'));
