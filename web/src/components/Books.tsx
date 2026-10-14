@@ -388,10 +388,15 @@ function readPrefs(): BooksPrefs {
   return merged as BooksPrefs;
 }
 
-function marginCss(m: BooksPrefs['margin']): string {
-  if (m === 'narrow') return '4%';
-  if (m === 'wide') return '18%';
-  return '10%';
+function marginCss(m: BooksPrefs['margin'], isPhone = false): string {
+  if (isPhone) {
+    if (m === 'narrow') return '8px';
+    if (m === 'wide') return '22px';
+    return '14px';
+  }
+  if (m === 'narrow') return '3.5%';
+  if (m === 'wide') return '14%';
+  return '8%';
 }
 
 function inkColors(ink: BooksPrefs['ink'], theme: string): { fg: string; bg: string; scheme: string } {
@@ -401,10 +406,10 @@ function inkColors(ink: BooksPrefs['ink'], theme: string): { fg: string; bg: str
   return { fg: '#e8e4dc', bg: 'transparent', scheme: 'dark' };
 }
 
-function readerCss(prefs: BooksPrefs, theme: string): string {
+function readerCss(prefs: BooksPrefs, theme: string, isPhone = false): string {
   const stack = FONT_STACKS[prefs.fontFamily] || FONT_STACKS.serif;
   const ink = inkColors(prefs.ink, theme);
-  const pad = marginCss(prefs.margin);
+  const pad = marginCss(prefs.margin, isPhone);
   return `
     @namespace epub "http://www.idpf.org/2007/ops";
     html {
@@ -420,6 +425,11 @@ function readerCss(prefs: BooksPrefs, theme: string): string {
       line-height: ${prefs.lineHeight} !important;
       padding-left: ${pad} !important;
       padding-right: ${pad} !important;
+      padding-top: ${isPhone ? '10px' : '20px'} !important;
+      padding-bottom: ${isPhone ? '16px' : '24px'} !important;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      word-break: break-word;
     }
     p, li, blockquote, dd {
       line-height: ${prefs.lineHeight} !important;
@@ -500,7 +510,7 @@ export default function Books() {
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('jr-shell-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
   });
-  const [panel, setPanel] = useState<'none' | 'toc' | 'marks' | 'bookmarks'>('none');
+  const [panel, setPanel] = useState<'none' | 'toc' | 'marks' | 'bookmarks' | 'appearance'>('none');
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [toc, setToc] = useState<{ label: string; href: string; depth: number }[]>([]);
   const [focused, setFocused] = useState(false);
@@ -534,6 +544,36 @@ export default function Books() {
   prefsRef.current = prefs;
   marksLive.current = marks;
   menuOpenRef.current = menu !== null;
+
+  const updatePref = useCallback(<K extends keyof BooksPrefs>(key: K, value: BooksPrefs[K]) => {
+    setPrefs((prev) => {
+      const next = { ...prev, [key]: value };
+      prefsRef.current = next;
+      try { localStorage.setItem('jr-books-prefs', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  const copyQuote = useCallback(async (text: string) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      notify('Passage copied to clipboard');
+    } catch {
+      notify('Could not copy to clipboard');
+    }
+  }, [notify]);
 
   const books = useMemo(() => shelfBooks(tree), [tree]);
   const book = books.find((b) => b.path === bookPath) || null;
@@ -631,21 +671,26 @@ export default function Books() {
   useEffect(() => {
     const view = viewRef.current;
     if (!view?.renderer) return;
-    view.renderer.setStyles?.(readerCss(prefs, theme));
+    const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+    view.renderer.setStyles?.(readerCss(prefs, theme, isMobile));
     view.renderer.setAttribute?.('flow', prefs.flow);
+    view.renderer.setAttribute?.('gap', isMobile ? '2%' : '5%');
+    view.renderer.setAttribute?.('margin', isMobile ? '16px' : '40px');
+    view.renderer.setAttribute?.('max-inline-size', isMobile ? '100%' : '720px');
   }, [prefs, theme, bookPath]);
 
   useEffect(() => {
     const el = sheetRef.current;
     if (!el) return;
     const ink = inkColors(prefs.ink, theme);
+    const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
     el.style.fontSize = `${prefs.fontSize}px`;
     el.style.lineHeight = String(prefs.lineHeight);
     el.style.fontFamily = FONT_STACKS[prefs.fontFamily] || FONT_STACKS.serif;
     el.style.color = ink.fg;
     el.style.background = ink.bg === 'transparent' ? '' : ink.bg;
-    el.style.paddingLeft = marginCss(prefs.margin);
-    el.style.paddingRight = marginCss(prefs.margin);
+    el.style.paddingLeft = marginCss(prefs.margin, isMobile);
+    el.style.paddingRight = marginCss(prefs.margin, isMobile);
     el.style.textAlign = prefs.justify ? 'justify' : 'start';
   }, [prefs, theme, plainHtml]);
 
@@ -717,8 +762,12 @@ export default function Books() {
     const t = (() => {
       try { return localStorage.getItem('jr-shell-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
     })();
-    view.renderer?.setStyles?.(readerCss(p, t));
+    const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+    view.renderer?.setStyles?.(readerCss(p, t, isMobile));
     view.renderer?.setAttribute?.('flow', p.flow);
+    view.renderer?.setAttribute?.('gap', isMobile ? '2%' : '5%');
+    view.renderer?.setAttribute?.('margin', isMobile ? '16px' : '40px');
+    view.renderer?.setAttribute?.('max-inline-size', isMobile ? '100%' : '720px');
   }, []);
 
   const loadMarks = useCallback(async (folderName: string) => {
@@ -772,12 +821,13 @@ export default function Books() {
     if (!menu) { setMenuPos(null); return; }
     const place = () => {
       const el = menuRef.current; if (!el) return;
-      const M = 8, GAP = 12, vw = window.innerWidth, vh = window.innerHeight;
+      const M = 10, GAP = 10, vw = window.innerWidth, vh = window.innerHeight;
       el.style.maxWidth = `${vw - 2 * M}px`;
       const { width: w, height: h } = el.getBoundingClientRect();
       const left = Math.max(M, Math.min(menu.x - w / 2, vw - w - M));
-      const below = menu.y + GAP, above = menu.y - GAP - h;
-      const top = below + h <= vh - M ? below : above >= M ? above : Math.max(M, vh - h - M);
+      const above = menu.y - GAP - h;
+      const below = menu.y + GAP + 24;
+      const top = above >= M + 44 ? above : (below + h <= vh - M ? below : Math.max(M + 44, vh - h - M));
       setMenuPos((p) => (p && p.left === left && p.top === top ? p : { left, top }));
     };
     place();
@@ -930,6 +980,13 @@ export default function Books() {
         const index = (ev as CustomEvent).detail?.index as number;
         if (!doc) return;
         let dismissClick = false;
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchStartTime = 0;
+        let isTouchDrag = false;
+        let recentTouchTap = 0;
+        let selTimer = 0;
+
         const onDocDown = (e: MouseEvent | TouchEvent) => {
           if ('button' in e && e.button !== 0) return;
           if (menuOpenRef.current) {
@@ -937,24 +994,108 @@ export default function Books() {
             setMenu(null);
           }
         };
-        doc.addEventListener('mousedown', onDocDown, true);
-        doc.addEventListener('touchstart', onDocDown, { capture: true, passive: true });
-        const onSel = (e: MouseEvent) => {
+
+        const checkSelection = (eClientX?: number, eClientY?: number) => {
           const sel = doc.getSelection();
           const quote = sel?.toString() || '';
-          if (!sel || !sel.rangeCount || quote.trim().length < 2) return;
+          if (!sel || !sel.rangeCount || quote.trim().length < 2) return false;
           dismissClick = false;
-          if (e.type === 'contextmenu') e.preventDefault();
           let location = '';
-          try { location = view.getCFI(index, sel.getRangeAt(0)); } catch { location = ''; }
+          let rect: DOMRect | null = null;
+          try {
+            const range = sel.getRangeAt(0);
+            location = view.getCFI(index, range);
+            rect = range.getBoundingClientRect();
+          } catch { location = ''; }
           const frame = doc.defaultView?.frameElement as HTMLElement | null;
-          const box = frame?.getBoundingClientRect();
-          openMenuRef.current((box?.left || 0) + e.clientX, (box?.top || 0) + e.clientY, quote, location);
+          const box = frame?.getBoundingClientRect() || { left: 0, top: 0 };
+          let x = (box?.left || 0) + (typeof eClientX === 'number' ? eClientX : window.innerWidth / 2);
+          let y = (box?.top || 0) + (typeof eClientY === 'number' ? eClientY : 80);
+          if (rect && rect.width > 0 && rect.height > 0) {
+            x = box.left + rect.left + rect.width / 2;
+            y = box.top + rect.top;
+          }
+          openMenuRef.current(x, y, quote, location);
+          return true;
         };
-        doc.addEventListener('mouseup', onSel);
+
+        const handleTap = (clientX: number) => {
+          if (!prefsRef.current.tapZones) return;
+          const w = doc.documentElement.clientWidth || window.innerWidth;
+          if (clientX < w * 0.32) {
+            view.goLeft();
+          } else if (clientX > w * 0.68) {
+            view.goRight();
+          } else {
+            setFocused((f) => !f);
+          }
+        };
+
+        const onDocTouchStart = (e: TouchEvent) => {
+          onDocDown(e);
+          if (e.touches.length !== 1) {
+            isTouchDrag = true;
+            return;
+          }
+          const t = e.touches[0];
+          touchStartX = t.clientX;
+          touchStartY = t.clientY;
+          touchStartTime = Date.now();
+          isTouchDrag = false;
+        };
+
+        const onDocTouchMove = (e: TouchEvent) => {
+          if (isTouchDrag) return;
+          const t = e.touches[0];
+          if (!t) return;
+          if (Math.hypot(t.clientX - touchStartX, t.clientY - touchStartY) > 12) {
+            isTouchDrag = true;
+          }
+        };
+
+        const onDocTouchEnd = (e: TouchEvent) => {
+          const dt = Date.now() - touchStartTime;
+          if (isTouchDrag || dt > 450) {
+            window.setTimeout(() => checkSelection(), 60);
+            return;
+          }
+          if (checkSelection()) return;
+          if (dismissClick) {
+            dismissClick = false;
+            return;
+          }
+          const t = e.changedTouches[0];
+          if (!t) return;
+          const target = doc.elementFromPoint(t.clientX, t.clientY) as HTMLElement | null;
+          if (target?.closest?.('a[href], button, input, textarea, select')) return;
+          recentTouchTap = Date.now();
+          handleTap(t.clientX);
+        };
+
+        doc.addEventListener('mousedown', onDocDown, true);
+        doc.addEventListener('touchstart', onDocTouchStart, { capture: true, passive: true });
+        doc.addEventListener('touchmove', onDocTouchMove, { capture: true, passive: true });
+        doc.addEventListener('touchend', onDocTouchEnd);
+        doc.addEventListener('selectionchange', () => {
+          const sel = doc.getSelection();
+          if (sel && sel.toString().trim().length >= 2) {
+            window.clearTimeout(selTimer);
+            selTimer = window.setTimeout(() => checkSelection(), 220);
+          }
+        });
+
+        doc.addEventListener('mouseup', (e) => {
+          checkSelection(e.clientX, e.clientY);
+        });
         doc.addEventListener('wheel', onWheelTurn, { passive: false });
-        doc.addEventListener('contextmenu', onSel);
+        doc.addEventListener('contextmenu', (e) => {
+          if (checkSelection(e.clientX, e.clientY)) {
+            e.preventDefault();
+          }
+        });
+
         doc.addEventListener('click', (e) => {
+          if (Date.now() - recentTouchTap < 400) return;
           const wasDismiss = dismissClick;
           dismissClick = false;
           const t = e.target as HTMLElement | null;
@@ -962,14 +1103,9 @@ export default function Books() {
             if (wasDismiss) e.preventDefault();
             return;
           }
-          const sel = doc.getSelection();
-          if (sel && sel.toString().trim().length >= 2) return;
+          if (checkSelection(e.clientX, e.clientY)) return;
           if (wasDismiss) return;
-          if (!prefsRef.current.tapZones) return;
-          const w = doc.documentElement.clientWidth || 1;
-          const x = (e as MouseEvent).clientX;
-          if (x < w * 0.14) view.goLeft();
-          else if (x > w * 0.86) view.goRight();
+          handleTap((e as MouseEvent).clientX);
         });
         doc.addEventListener('keydown', (e) => {
           if (e.key === 'Escape') {
@@ -1091,15 +1227,13 @@ export default function Books() {
     };
     const onDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
-      if (menuRef.current?.contains(e.target as Node)) return;
       const t = e.target as HTMLElement | null;
-      if (t?.closest?.('.books-flyout')) return;
+      if (t?.closest?.('.book-menu, .books-flyout, .books-chrome, .books-phone-back, .gk-back')) return;
       setMenu(null);
     };
     const onTouch = (e: TouchEvent) => {
-      if (menuRef.current?.contains(e.target as Node)) return;
       const t = e.target as HTMLElement | null;
-      if (t?.closest?.('.books-flyout')) return;
+      if (t?.closest?.('.book-menu, .books-flyout, .books-chrome, .books-phone-back, .gk-back')) return;
       setMenu(null);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -1374,7 +1508,7 @@ export default function Books() {
     >
       {phone && book && !phoneList && (
         <button type="button" className="books-phone-back" onClick={() => setPhoneList(true)}>
-          Books
+          ‹ Books
         </button>
       )}
       {prefs.progressBar && book && (
@@ -1455,6 +1589,15 @@ export default function Books() {
       <div className="books-stage">
         {book && (
           <div className="books-chrome">
+            <button
+              type="button"
+              className={panel === 'appearance' ? 'books-tool on' : 'books-tool'}
+              title="Text & Appearance (Aa)"
+              aria-label="Text & Appearance"
+              onClick={() => setPanel((p) => (p === 'appearance' ? 'none' : 'appearance'))}
+            >
+              <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: -0.5 }}>Aa</span>
+            </button>
             <button type="button" className={panel === 'toc' ? 'books-tool on' : 'books-tool'} title="Chapters" onClick={() => setPanel((p) => (p === 'toc' ? 'none' : 'toc'))}>
               <IconToc />
             </button>
@@ -1493,6 +1636,22 @@ export default function Books() {
             className="books-sheet"
             ref={sheetRef}
             onScroll={onSheetScroll}
+            onClick={(e) => {
+              if (!prefs.tapZones) return;
+              const sel = document.getSelection();
+              if (sel && sel.toString().trim().length >= 2) return;
+              const el = sheetRef.current;
+              if (!el) return;
+              const w = el.clientWidth || window.innerWidth;
+              const pageH = Math.max(120, el.clientHeight * 0.85);
+              if (e.clientX < w * 0.32) {
+                el.scrollBy({ top: -pageH, behavior: 'smooth' });
+              } else if (e.clientX > w * 0.68) {
+                el.scrollBy({ top: pageH, behavior: 'smooth' });
+              } else {
+                setFocused((f) => !f);
+              }
+            }}
             dangerouslySetInnerHTML={{ __html: plainHtml }}
           />
         )}
@@ -1508,10 +1667,96 @@ export default function Books() {
         {panel !== 'none' && book && (
           <div className="books-flyout">
             <div className="books-flyout-head">
-              <span>{panel === 'toc' ? 'Chapters' : panel === 'bookmarks' ? 'Bookmarks' : 'Highlights'}</span>
+              <span>{panel === 'toc' ? 'Chapters' : panel === 'bookmarks' ? 'Bookmarks' : panel === 'marks' ? 'Highlights' : 'Appearance'}</span>
               <button type="button" className="books-tool" onClick={() => setPanel('none')} aria-label="Close">×</button>
             </div>
             <div className="books-flyout-body">
+              {panel === 'appearance' && (
+                <div className="books-appearance-body">
+                  <div className="books-pref-group">
+                    <label>Text Size</label>
+                    <div className="books-pref-size-row">
+                      <button
+                        type="button"
+                        className="books-pref-btn"
+                        onClick={() => updatePref('fontSize', Math.max(12, prefs.fontSize - 1))}
+                        aria-label="Decrease font size"
+                      >
+                        A−
+                      </button>
+                      <span className="books-pref-size-val">{prefs.fontSize}px</span>
+                      <button
+                        type="button"
+                        className="books-pref-btn"
+                        onClick={() => updatePref('fontSize', Math.min(36, prefs.fontSize + 1))}
+                        aria-label="Increase font size"
+                      >
+                        A+
+                      </button>
+                    </div>
+                  </div>
+                  <div className="books-pref-group">
+                    <label>Typeface</label>
+                    <div className="books-pref-pills">
+                      {(['serif', 'sans', 'mono', 'dyslexia'] as const).map((f) => (
+                        <button
+                          key={f}
+                          type="button"
+                          className={prefs.fontFamily === f ? 'books-pill on' : 'books-pill'}
+                          onClick={() => updatePref('fontFamily', f)}
+                        >
+                          {f === 'serif' ? 'Serif' : f === 'sans' ? 'Sans' : f === 'mono' ? 'Mono' : 'Dyslexic'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="books-pref-group">
+                    <label>Theme</label>
+                    <div className="books-pref-pills">
+                      {(['follow', 'sepia', 'paper'] as const).map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          className={prefs.ink === k ? 'books-pill on' : 'books-pill'}
+                          onClick={() => updatePref('ink', k)}
+                        >
+                          {k === 'follow' ? 'System/Dark' : k === 'sepia' ? 'Sepia' : 'Clean Paper'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="books-pref-group">
+                    <label>Margins</label>
+                    <div className="books-pref-pills">
+                      {(['narrow', 'medium', 'wide'] as const).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          className={prefs.margin === m ? 'books-pill on' : 'books-pill'}
+                          onClick={() => updatePref('margin', m)}
+                        >
+                          {m.charAt(0).toUpperCase() + m.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="books-pref-group">
+                    <label>Line Spacing</label>
+                    <div className="books-pref-pills">
+                      {([1.4, 1.65, 1.9] as const).map((lh) => (
+                        <button
+                          key={lh}
+                          type="button"
+                          className={Math.abs(prefs.lineHeight - lh) < 0.05 ? 'books-pill on' : 'books-pill'}
+                          onClick={() => updatePref('lineHeight', lh)}
+                        >
+                          {lh === 1.4 ? 'Compact' : lh === 1.65 ? 'Normal' : 'Relaxed'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
               {panel === 'toc' && (
                 toc.length === 0
                   ? <p className="books-empty">No chapter list in this file.</p>
@@ -1581,10 +1826,16 @@ export default function Books() {
                 type="button"
                 className={menu.color === c.id ? 'on' : ''}
                 style={{ background: c.value }}
-                aria-label={c.id}
+                aria-label={`Highlight ${c.id}`}
+                title={`Highlight ${c.id}`}
                 onClick={() => {
                   setMenu({ ...menu, color: c.id });
-                  if (!menu.noting) void writePassage(c.id, menu.draft);
+                  if (!menu.noting) {
+                    void writePassage(c.id, menu.draft);
+                    if (phone) {
+                      setMenu(null);
+                    }
+                  }
                 }}
               />
             ))}
@@ -1595,58 +1846,93 @@ export default function Books() {
               <button
                 type="button"
                 className="book-menu-btn"
+                title="Define in Dictionary"
                 onClick={() => {
                   const q = menu.quote;
                   setMenu(null);
                   openDict(q);
                 }}
               >
-                <IconDictionary /> Look up in Dictionary
+                <IconDictionary /> <span>Define</span>
               </button>
               <button
                 type="button"
                 className="book-menu-btn"
+                title="Explore in Grokipedia"
                 onClick={() => {
                   const q = menu.quote;
                   setMenu(null);
                   openGrok(q);
                 }}
               >
-                <IconGrokipedia /> Look up in Grokipedia
+                <IconGrokipedia /> <span>Explore</span>
               </button>
-              <div className="book-menu-sep" />
-              <button type="button" className="book-menu-note" onClick={() => setMenu({ ...menu, noting: true })}>
-                {menu.existing?.note ? 'Edit note' : 'Add note'}
+              <button
+                type="button"
+                className="book-menu-btn"
+                title={menu.existing?.note ? 'Edit note' : 'Add note'}
+                onClick={() => setMenu({ ...menu, noting: true })}
+              >
+                <IconNote /> <span>{menu.existing?.note ? 'Edit Note' : 'Note'}</span>
+              </button>
+              <button
+                type="button"
+                className="book-menu-btn"
+                title="Copy quote"
+                onClick={() => {
+                  const q = menu.quote;
+                  setMenu(null);
+                  void copyQuote(q);
+                }}
+              >
+                <IconCopy /> <span>Copy</span>
               </button>
               {menu.existing && (
-                <button type="button" className="book-menu-note danger" onClick={() => void removePassage()}>
-                  Remove
+                <button
+                  type="button"
+                  className="book-menu-btn danger"
+                  title="Remove highlight"
+                  onClick={() => void removePassage()}
+                >
+                  <IconTrash /> <span>Remove</span>
                 </button>
               )}
+              <button
+                type="button"
+                className="book-menu-btn dismiss"
+                title="Close"
+                aria-label="Close"
+                onClick={() => setMenu(null)}
+              >
+                ×
+              </button>
             </>
           )}
           {menu.noting && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void writePassage(menu.color, menu.draft);
-              }}
-            >
-              <textarea
-                value={menu.draft}
-                onChange={(e) => setMenu({ ...menu, draft: e.target.value })}
-                placeholder="Note"
-                autoFocus
-                onMouseDown={(e) => e.stopPropagation()}
-              />
-              <div className="book-menu-row">
-                {menu.existing && (
-                  <button type="button" className="danger" onClick={() => void removePassage()}>Remove</button>
-                )}
-                <button type="button" onClick={() => setMenu(null)}>Cancel</button>
-                <button type="submit">Save</button>
-              </div>
-            </form>
+            <div className="book-noting-box">
+              <p className="book-note-quote">“{menu.quote.slice(0, 140)}{menu.quote.length > 140 ? '…' : ''}”</p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void writePassage(menu.color, menu.draft);
+                }}
+              >
+                <textarea
+                  value={menu.draft}
+                  onChange={(e) => setMenu({ ...menu, draft: e.target.value })}
+                  placeholder="Write a note..."
+                  autoFocus
+                  onMouseDown={(e) => e.stopPropagation()}
+                />
+                <div className="book-menu-row">
+                  {menu.existing && (
+                    <button type="button" className="danger" onClick={() => void removePassage()}>Delete</button>
+                  )}
+                  <button type="button" onClick={() => setMenu(null)}>Cancel</button>
+                  <button type="submit" className="primary">Save</button>
+                </div>
+              </form>
+            </div>
           )}
         </div>
       )}
@@ -1820,6 +2106,33 @@ function IconGrokipedia() {
       <circle cx="12" cy="12" r="10" />
       <line x1="2" y1="12" x2="22" y2="12" />
       <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  );
+}
+
+function IconNote() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  );
+}
+
+function IconCopy() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+function IconTrash() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
     </svg>
   );
 }
