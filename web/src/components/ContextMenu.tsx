@@ -14,6 +14,7 @@ function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose: () =>
             key={i}
             className={`context-item ${it.danger ? 'danger' : ''} ${it.submenu ? 'has-sub' : ''}`}
             onMouseEnter={() => setOpenSub(it.submenu ? i : null)}
+            onMouseDown={(e) => e.preventDefault()}
             onClick={(e) => {
               if (it.submenu) {
                 e.stopPropagation();

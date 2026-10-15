@@ -182,6 +182,7 @@ export default function Editor() {
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
+    if (e.defaultPrevented) return;
     e.preventDefault();
     const v = view.current;
     const sel = v ? v.state.sliceDoc(v.state.selection.main.from, v.state.selection.main.to) : '';

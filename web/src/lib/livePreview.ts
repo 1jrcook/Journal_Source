@@ -937,6 +937,12 @@ function appendInline(parent: HTMLElement, text: string) {
 
 const ALIGN_DELIM: Record<string, string> = { left: ':---', center: ':---:', right: '---:', '': '---' };
 
+// contenteditable's innerText adds a trailing newline. Writing that back splits
+// the markdown row and the rest of the note stops being a table.
+function cellPlain(el: HTMLElement): string {
+  return el.innerText.replace(/\u00a0/g, ' ').replace(/\n+$/g, '');
+}
+
 /** Serialize a table model back to GFM markdown. */
 function serializeTable(header: string[], align: (Align | '')[], rows: string[][]): string {
   const esc = (s: string) => s.replace(/\|/g, '\\|').replace(/\n/g, '<br>');
@@ -952,6 +958,8 @@ function serializeTable(header: string[], align: (Align | '')[], rows: string[][
  * which makes `tableField` rebuild the widget — so the DOM is always in sync.
  */
 class TableWidget extends WidgetType {
+  /** Set once this widget's DOM is no longer the live table, so a late menu click cannot write again. */
+  private retired = false;
   /** `ro` = reading mode: render-only, no cell editing / handles / menus. */
   constructor(readonly block: TableBlock, readonly ro: boolean) {
     super();
@@ -959,11 +967,15 @@ class TableWidget extends WidgetType {
   eq(o: TableWidget) {
     return o.block.key === this.block.key && o.ro === this.ro;
   }
+  destroy() {
+    this.retired = true;
+  }
   ignoreEvent() {
     // We own all interaction (editing + controls); keep events from reaching CM.
     return true;
   }
   toDOM(view: EditorView) {
+    const self = this;
     const b = this.block;
     const cols = b.header.length;
     const wrap = document.createElement('div');
@@ -980,19 +992,36 @@ class TableWidget extends WidgetType {
       const header = ths.map((th) => th.dataset.raw ?? '');
       const align = ths.map((th) => (th.dataset.align ?? '') as Align | '');
       const rows = ([...table.querySelectorAll('tbody tr')] as HTMLElement[]).map((tr) =>
-        ([...tr.children] as HTMLElement[]).map((td) => td.dataset.raw ?? ''),
+        ([...tr.children] as HTMLElement[])
+          .filter((td) => td.tagName === 'TD' || td.tagName === 'TH')
+          .map((td) => td.dataset.raw ?? ''),
       );
       return { header, align, rows };
     };
     const flushActive = () => {
       const el = document.activeElement as HTMLElement | null;
-      if (el && el.dataset && el.classList.contains('cm-cell-edit')) el.dataset.raw = el.innerText;
+      if (el && el.dataset && el.classList.contains('cm-cell-edit')) el.dataset.raw = cellPlain(el);
     };
+    // `b.from`/`b.to` are from the scan that built this widget. A menu click used to
+    // write with those numbers after an earlier edit had already moved the table,
+    // so the replace landed in the middle of the note. Look the table up again.
     const commit = (m: { header: string[]; align: (Align | '')[]; rows: string[][] }) => {
-      view.dispatch({ changes: { from: b.from, to: b.to, insert: serializeTable(m.header, m.align, m.rows) } });
+      if (self.retired) return;
+      let pos = -1;
+      try { pos = view.posAtDOM(wrap); } catch { pos = -1; }
+      const tables = scanTables(view.state.doc);
+      const block =
+        tables.find((t) => pos >= t.from && pos <= t.to) ||
+        tables.find((t) => pos >= t.from - 1 && pos <= t.to + 1);
+      if (!block) return;
+      const next = serializeTable(m.header, m.align, m.rows);
+      if (view.state.sliceDoc(block.from, block.to) === next) return;
+      self.retired = true;
+      view.dispatch({ changes: { from: block.from, to: block.to, insert: next } });
       view.focus();
     };
     const mutate = (fn: (m: { header: string[]; align: (Align | '')[]; rows: string[][] }) => void) => {
+      if (self.retired) return;
       flushActive();
       const m = readModel();
       fn(m);
@@ -1028,21 +1057,39 @@ class TableWidget extends WidgetType {
         sel?.removeAllRanges();
         sel?.addRange(r);
       });
+      const stop = (e: Event) => e.stopPropagation();
+      cell.addEventListener('beforeinput', stop);
+      cell.addEventListener('input', stop);
+      cell.addEventListener('paste', stop);
       cell.addEventListener('blur', () => {
-        const v = cell.innerText;
-        if (v === cell.dataset.raw) {
+        const v = cellPlain(cell);
+        const changed = v !== (cell.dataset.raw ?? '');
+        if (changed) cell.dataset.raw = v;
+        // The format menu is about to run its own commit. A blur commit here
+        // used the old range, then the menu click wrote a second time and
+        // scrambled the note. If the menu is dismissed, the timer saves the cell.
+        if (document.querySelector('.context-menu')) {
+          window.setTimeout(() => {
+            if (self.retired || !cell.isConnected || document.querySelector('.context-menu')) return;
+            if (changed) mutate(() => {});
+            else setCellRendered(cell);
+          }, 0);
+          return;
+        }
+        if (!changed) {
           setCellRendered(cell);
           return;
         }
-        cell.dataset.raw = v;
-        mutate(() => {}); // model already reflects the edited data-raw
+        mutate(() => {});
       });
       cell.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
+          e.stopPropagation();
           (cell as HTMLElement).blur();
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          e.stopPropagation();
           cell.textContent = cell.dataset.raw ?? '';
           setCellRendered(cell);
           (cell as HTMLElement).blur();
@@ -1090,8 +1137,12 @@ class TableWidget extends WidgetType {
     const cellMenu = (col: number, rowIdx: number): LpMenuItem[] => [
       { label: 'Insert column left', icon: 'plus', onClick: () => insertColumn(col) },
       { label: 'Insert column right', icon: 'plus', onClick: () => insertColumn(col + 1) },
-      { label: 'Insert row above', icon: 'plus', onClick: () => insertRow(Math.max(0, rowIdx)) },
-      { label: 'Insert row below', icon: 'plus', onClick: () => insertRow(rowIdx + 1) },
+      ...(rowIdx >= 0
+        ? [
+            { label: 'Insert row above', icon: 'plus', onClick: () => insertRow(rowIdx) },
+            { label: 'Insert row below', icon: 'plus', onClick: () => insertRow(rowIdx + 1) },
+          ]
+        : [{ label: 'Insert row below', icon: 'plus', onClick: () => insertRow(0) }]),
       { label: '', separator: true },
       { label: 'Move column left', onClick: () => moveColumn(col, col - 1) },
       { label: 'Move column right', onClick: () => moveColumn(col, col + 1) },
