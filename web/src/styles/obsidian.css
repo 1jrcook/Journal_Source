@@ -2049,6 +2049,11 @@ audio.media-embed { display: block; width: min(100%, 480px); max-width: 100%; ma
 }
 .books:fullscreen { width: 100%; height: 100%; background: var(--background-primary); }
 .books-fill { position: fixed; inset: 0; z-index: 80; height: 100%; background: var(--background-primary); }
+.books-idle-veil {
+  position: absolute; inset: 0; z-index: 90; border: 0; padding: 0; cursor: pointer;
+  background: rgba(0, 0, 0, 0.45); transition: background .6s ease;
+}
+.books-idle-veil.off { background: #000; }
 .books-progress {
   position: absolute; top: 0; left: 0; right: 0; z-index: 6; height: 2px;
   background: transparent; pointer-events: none;

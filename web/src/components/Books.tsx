@@ -47,6 +47,10 @@ type BooksPrefs = {
   tapZones: boolean;
   progressBar: boolean;
   keepAwake: boolean;
+  /** Minutes of idle before the reading pane dims (overrides OS while reading). */
+  dimMinutes: number;
+  /** Minutes of idle before releasing the screen so it can turn off. */
+  offMinutes: number;
   focusMode: boolean;
   showEta: boolean;
   wpm: number;
@@ -65,7 +69,9 @@ const DEFAULT_PREFS: BooksPrefs = {
   resumeLast: true,
   tapZones: true,
   progressBar: true,
-  keepAwake: false,
+  keepAwake: true,
+  dimMinutes: 10,
+  offMinutes: 20,
   focusMode: true,
   showEta: true,
   wpm: 230,
@@ -385,6 +391,9 @@ function readPrefs(): BooksPrefs {
   if (typeof merged.fontSize !== 'number') merged.fontSize = DEFAULT_PREFS.fontSize;
   if (typeof merged.lineHeight !== 'number') merged.lineHeight = DEFAULT_PREFS.lineHeight;
   if (typeof merged.wpm !== 'number') merged.wpm = DEFAULT_PREFS.wpm;
+  if (typeof merged.dimMinutes !== 'number' || merged.dimMinutes < 1) merged.dimMinutes = DEFAULT_PREFS.dimMinutes;
+  if (typeof merged.offMinutes !== 'number' || merged.offMinutes < 1) merged.offMinutes = DEFAULT_PREFS.offMinutes;
+  if (merged.offMinutes < merged.dimMinutes) merged.offMinutes = merged.dimMinutes;
   return merged as BooksPrefs;
 }
 
@@ -539,6 +548,11 @@ export default function Books() {
   const addBookmarkRef = useRef<() => void>(() => {});
   const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
   const idleRef = useRef(0);
+  const screenIdleRef = useRef(0);
+  const dimTimerRef = useRef(0);
+  const offTimerRef = useRef(0);
+  const [screenDimmed, setScreenDimmed] = useState(false);
+  const [screenOff, setScreenOff] = useState(false);
   const marksLive = useRef(marks);
   colorRef.current = new Map(marks.map((m) => [m.location, colorValue(m.color)]));
   prefsRef.current = prefs;
@@ -695,18 +709,65 @@ export default function Books() {
   }, [prefs, theme, plainHtml]);
 
   useEffect(() => {
-    if (!prefs.keepAwake || !book) {
-      wakeRef.current?.release().catch(() => {});
-      wakeRef.current = null;
-      return;
-    }
-    const nav = navigator as Navigator & { wakeLock?: { request: (t: string) => Promise<{ release: () => Promise<void> }> } };
-    nav.wakeLock?.request('screen').then((lock) => { wakeRef.current = lock; }).catch(() => {});
-    return () => {
+    const clearTimers = () => {
+      window.clearTimeout(dimTimerRef.current);
+      window.clearTimeout(offTimerRef.current);
+    };
+    const releaseWake = () => {
       wakeRef.current?.release().catch(() => {});
       wakeRef.current = null;
     };
-  }, [prefs.keepAwake, book]);
+    const holdWake = () => {
+      if (wakeRef.current) return;
+      const nav = navigator as Navigator & { wakeLock?: { request: (t: string) => Promise<{ release: () => Promise<void> }> } };
+      nav.wakeLock?.request('screen').then((lock) => { wakeRef.current = lock; }).catch(() => {});
+    };
+    if (!prefs.keepAwake || !book) {
+      clearTimers();
+      releaseWake();
+      setScreenDimmed(false);
+      setScreenOff(false);
+      return;
+    }
+    const dimMs = Math.max(1, Number(prefs.dimMinutes) || 10) * 60 * 1000;
+    const offMs = Math.max(dimMs / 60000, Number(prefs.offMinutes) || 20) * 60 * 1000;
+    const arm = () => {
+      clearTimers();
+      setScreenDimmed(false);
+      setScreenOff(false);
+      holdWake();
+      dimTimerRef.current = window.setTimeout(() => setScreenDimmed(true), dimMs);
+      offTimerRef.current = window.setTimeout(() => {
+        setScreenOff(true);
+        setScreenDimmed(true);
+        releaseWake();
+      }, offMs);
+    };
+    arm();
+    const bump = () => {
+      screenIdleRef.current = Date.now();
+      arm();
+    };
+    window.addEventListener('mousemove', bump);
+    window.addEventListener('mousedown', bump);
+    window.addEventListener('keydown', bump);
+    window.addEventListener('touchstart', bump, { passive: true });
+    window.addEventListener('wheel', bump, { passive: true });
+    const onVis = () => {
+      if (document.visibilityState === 'visible') holdWake();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearTimers();
+      releaseWake();
+      window.removeEventListener('mousemove', bump);
+      window.removeEventListener('mousedown', bump);
+      window.removeEventListener('keydown', bump);
+      window.removeEventListener('touchstart', bump);
+      window.removeEventListener('wheel', bump);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [prefs.keepAwake, prefs.dimMinutes, prefs.offMinutes, book]);
 
   useEffect(() => {
     if (!prefs.focusMode || !book) {
@@ -1986,6 +2047,18 @@ export default function Books() {
             </div>
           </div>
         </div>
+      )}
+      {book && (screenDimmed || screenOff) && (
+        <button
+          type="button"
+          className={'books-idle-veil' + (screenOff ? ' off' : ' dim')}
+          aria-label={screenOff ? 'Screen resting — tap to keep reading' : 'Reading pane dimmed — tap to continue'}
+          onClick={() => {
+            setScreenDimmed(false);
+            setScreenOff(false);
+            screenIdleRef.current = Date.now();
+          }}
+        />
       )}
     </div>
   );
