@@ -226,6 +226,33 @@ function pushReadingState(p: string, patch: ReadingState) {
   fetch('/api/reading-state', { method: 'PUT', credentials: 'include', keepalive: true, headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: p, ...patch, updatedAt: at }) }).catch(() => {});
 }
+/** Roots of Power · Read: heartbeat while open, visible, and recently paged (idle > 2 min pauses). */
+function pushReadingHeartbeat(opts: {
+  path: string; title: string; fraction?: number; active: boolean;
+}) {
+  const now = new Date();
+  // Prefer Asia/Bangkok until Oceanside; fall back to the device zone.
+  let localDate = '';
+  let localHour = now.getHours();
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: 'numeric', hour12: false,
+    });
+    const parts = Object.fromEntries(fmt.formatToParts(now).map(p => [p.type, p.value]));
+    localDate = `${parts.year}-${parts.month}-${parts.day}`;
+    localHour = Number(parts.hour);
+  } catch {
+    localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+  fetch('/api/reading/heartbeat', {
+    method: 'POST', credentials: 'include', keepalive: true,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      path: opts.path, title: opts.title, fraction: opts.fraction,
+      localDate, localHour, active: opts.active,
+    }),
+  }).catch(() => {});
+}
 function localReadAt(p: string): number {
   try { return Number(localStorage.getItem('jr-book-at:' + p) || '0'); } catch { return 0; }
 }
@@ -540,6 +567,9 @@ export default function Books() {
   const folderRef = useRef('');
   const colorRef = useRef<Map<string, string>>(new Map());
   const prefsRef = useRef(prefs);
+  const lastPageAtRef = useRef(0);
+  const fractionRef = useRef(0);
+  const titleRef = useRef('');
   const openMenuRef = useRef<(x: number, y: number, quote: string, location: string) => void>(() => {});
   const openDictRef = useRef<(term: string) => void>(() => {});
   const openGrokRef = useRef<(term: string) => void>(() => {});
@@ -556,6 +586,8 @@ export default function Books() {
   const marksLive = useRef(marks);
   colorRef.current = new Map(marks.map((m) => [m.location, colorValue(m.color)]));
   prefsRef.current = prefs;
+  fractionRef.current = fraction;
+  titleRef.current = title || (bookPath ? bookPath.split('/').pop() || 'Book' : '');
   marksLive.current = marks;
   menuOpenRef.current = menu !== null;
 
@@ -591,6 +623,36 @@ export default function Books() {
 
   const books = useMemo(() => shelfBooks(tree), [tree]);
   const book = books.find((b) => b.path === bookPath) || null;
+
+  // Roots of Power · Read: heartbeats while open, visible, and paged within 2 minutes.
+  useEffect(() => {
+    if (!bookPath) return;
+    lastPageAtRef.current = Date.now();
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastPageAtRef.current > 2 * 60 * 1000) return;
+      pushReadingHeartbeat({
+        path: bookPath,
+        title: titleRef.current || bookPath.split('/').pop() || 'Book',
+        fraction: fractionRef.current,
+        active: true,
+      });
+    };
+    tick();
+    const id = window.setInterval(tick, 15000);
+    const onVis = () => { if (document.visibilityState === 'visible') lastPageAtRef.current = Date.now(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+      pushReadingHeartbeat({
+        path: bookPath,
+        title: titleRef.current || bookPath.split('/').pop() || 'Book',
+        fraction: fractionRef.current,
+        active: false,
+      });
+    };
+  }, [bookPath]);
   const autoHide = prefs.autoHideShelf;
   const showLib = phone ? phoneList : (book && autoHide ? peek && !holdShut : !collapsed);
   const expanded = full || fill;
@@ -1024,6 +1086,7 @@ export default function Books() {
       host.append(view);
       view.addEventListener('relocate', (ev) => {
         const detail = (ev as CustomEvent).detail || {};
+        lastPageAtRef.current = Date.now();
         setPages(pageFromRelocate(detail));
         if (typeof detail.fraction === 'number') setFraction(detail.fraction);
         const ch = detail.tocItem?.label;
@@ -1339,6 +1402,7 @@ export default function Books() {
   const onSheetScroll = () => {
     const el = sheetRef.current;
     if (!el || !book) return;
+    lastPageAtRef.current = Date.now();
     const pagesN = Math.max(1, Math.ceil(el.scrollHeight / Math.max(1, el.clientHeight)));
     const page = Math.min(pagesN, Math.floor(el.scrollTop / Math.max(1, el.clientHeight)) + 1);
     setPages(`${page} / ${pagesN}`);

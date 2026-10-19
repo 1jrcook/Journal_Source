@@ -203,6 +203,114 @@ async function main() {
     await readingWrite;
     res.json(next);
   });
+
+  // Reading sessions (Roots of Power · Read). Heartbeats while a book is open, visible, and recently paged.
+  // Idle cutoff: gaps > 2 minutes do not count. Digests reads reading-sessions.json (no journal text stored).
+  const sessionsFile = path.join(config.dataDir, 'reading-sessions.json');
+  type BookDay = {
+    title: string; minutes: number; pages_advanced?: number;
+    percent_advanced?: number; first_fraction?: number; last_fraction?: number;
+  };
+  type DaySummary = { minutes: number; before_noon_minutes: number; books: BookDay[] };
+  type SessionsStore = {
+    days: Record<string, DaySummary>;
+    last?: Record<string, { at: number; path: string; date: string }>;
+  };
+  let sessions: SessionsStore | null = null;
+  const loadSessions = async (): Promise<SessionsStore> => {
+    if (sessions) return sessions;
+    try { sessions = JSON.parse(await fs.readFile(sessionsFile, 'utf8')) as SessionsStore; }
+    catch { sessions = { days: {}, last: {} }; }
+    if (!sessions.days) sessions.days = {};
+    if (!sessions.last) sessions.last = {};
+    return sessions;
+  };
+  let sessionsWrite: Promise<void> = Promise.resolve();
+  const persistSessions = () => {
+    sessionsWrite = sessionsWrite.then(async () => {
+      const tmp = sessionsFile + '.tmp';
+      await fs.writeFile(tmp, JSON.stringify(sessions));
+      await fs.rename(tmp, sessionsFile);
+    }).catch(() => {});
+    return sessionsWrite;
+  };
+  const IDLE_MS = 2 * 60 * 1000;
+  app.post('/api/reading/heartbeat', requireAuth, async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const p = typeof body.path === 'string' ? body.path.slice(0, 1000) : '';
+    const title = typeof body.title === 'string' ? body.title.slice(0, 200) : (p.split('/').pop() || 'Book');
+    const date = typeof body.localDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.localDate)
+      ? body.localDate : '';
+    const hour = typeof body.localHour === 'number' ? body.localHour
+      : (typeof body.localHour === 'string' ? Number(body.localHour) : NaN);
+    const fraction = typeof body.fraction === 'number' ? body.fraction : undefined;
+    const active = body.active !== false;
+    if (!p || !date) { res.status(400).json({ error: 'path and localDate required' }); return; }
+    if (!active) { res.json({ ok: true, skipped: 'inactive' }); return; }
+    const store = await loadSessions();
+    const now = Date.now();
+    const key = `${date}|${p}`;
+    const prev = store.last?.[key];
+    let addSec = 0;
+    if (prev && prev.at && now > prev.at) {
+      const gap = now - prev.at;
+      if (gap <= IDLE_MS) addSec = Math.min(gap, IDLE_MS) / 1000;
+    }
+    // First heartbeat of a stretch: credit a small slice so short sessions still register
+    if (!prev || (now - prev.at) > IDLE_MS) addSec = Math.max(addSec, 15);
+    const day = store.days[date] || { minutes: 0, before_noon_minutes: 0, books: [] };
+    let book = day.books.find(b => b.title === title);
+    if (!book) {
+      book = { title, minutes: 0, first_fraction: fraction, last_fraction: fraction };
+      day.books.push(book);
+    }
+    const addMin = addSec / 60;
+    book.minutes = Math.round((book.minutes + addMin) * 100) / 100;
+    day.minutes = Math.round((day.minutes + addMin) * 100) / 100;
+    if (Number.isFinite(hour) && hour < 12) {
+      day.before_noon_minutes = Math.round((day.before_noon_minutes + addMin) * 100) / 100;
+    }
+    if (typeof fraction === 'number') {
+      if (book.first_fraction == null) book.first_fraction = fraction;
+      book.last_fraction = fraction;
+      if (book.first_fraction != null) {
+        book.percent_advanced = Math.round(Math.max(0, (fraction - book.first_fraction) * 1000)) / 10;
+      }
+    }
+    store.days[date] = day;
+    store.last = store.last || {};
+    store.last[key] = { at: now, path: p, date };
+    sessions = store;
+    await persistSessions();
+    res.json({
+      ok: true,
+      date,
+      minutes: day.minutes,
+      before_noon_minutes: day.before_noon_minutes,
+      book_minutes: book.minutes,
+    });
+  });
+  app.get('/api/reading/summary', requireAuth, async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const date = typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
+      ? req.query.date : '';
+    if (!date) { res.status(400).json({ error: 'date required (YYYY-MM-DD)' }); return; }
+    const store = await loadSessions();
+    const day = store.days[date] || { minutes: 0, before_noon_minutes: 0, books: [] };
+    res.json({
+      ok: true,
+      date,
+      minutes: day.minutes,
+      before_noon_minutes: day.before_noon_minutes,
+      books: day.books.map(b => ({
+        title: b.title,
+        minutes: b.minutes,
+        pages_advanced: b.pages_advanced ?? null,
+        percent_advanced: b.percent_advanced ?? null,
+      })),
+    });
+  });
+
   app.use('/api', searchRouter); // /api/search, /api/tags, /api/backlinks, /api/graph...
 
   // Static SPA (built into server/public)
