@@ -26,27 +26,20 @@ function RenameInput({ node, onDone }: { node: TreeNode; onDone: () => void }) {
     if (done.current) return;
     done.current = true;
     const name = (ref.current?.value ?? '').trim();
-    const prompted = useStore.getState().templatePromptPath === node.path;
     onDone();
-    let finalPath = node.path;
     const dir = parentDir(node.path);
     const renamed = commit && !!name && name !== node.name;
     if (renamed) {
-      finalPath = dir ? `${dir}/${name}` : name;
+      const finalPath = dir ? `${dir}/${name}` : name;
       if (finalPath !== node.path) {
         try {
           await api.rename(node.path, finalPath);
           closeTab(node.path);
         } catch (e: any) {
           notify(e?.message ?? 'Rename failed');
-          finalPath = node.path;
         }
       }
-    }
-    if (renamed) await loadTree();
-    if (prompted && node.type === 'folder') {
-      useStore.setState({ templatePromptPath: null });
-      if (commit) useStore.getState().setNotesSettings(true, finalPath);
+      await loadTree();
     }
   };
 
@@ -335,7 +328,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
           { label: 'New note', onClick: () => newNote(node.path) },
           { label: 'New canvas', onClick: () => newCanvas(node.path) },
           { label: 'New folder', onClick: () => newFolder(node.path) },
-          { label: 'Template for new notes…', onClick: () => setNotesSettings(true, node.path) },
+          { label: 'Select template for folder', onClick: () => setNotesSettings(true, node.path) },
           { label: '', separator: true },
           { label: 'Copy', onClick: doClipboard('copy') },
           { label: 'Cut', onClick: doClipboard('cut') },

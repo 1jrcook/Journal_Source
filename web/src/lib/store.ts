@@ -264,8 +264,6 @@ interface AppState {
   /** Folder to pre-select when assigning a folder template. */
   notesSettingsFolder: string | null;
   setNotesSettings: (open: boolean, folder?: string | null) => void;
-  /** New folder that should ask for a template once its name is committed. */
-  templatePromptPath: string | null;
   insertTemplate: (path: string) => Promise<void>;
   useTemplateAsDaily: (path: string) => Promise<void>;
   /** Re-fetch content for the active/split tabs (after reload or remote sync). */
@@ -743,14 +741,13 @@ export const useStore = create<AppState>()(
           for (const s of segs) { acc = acc ? `${acc}/${s}` : s; ancestors.push(acc); }
           set((st) => ({ expanded: Array.from(new Set([...st.expanded, ...ancestors])) }));
         }
-        set({ leftPanel: 'files', leftOpen: true, renamingPath: path, templatePromptPath: path });
+        set({ leftPanel: 'files', leftOpen: true, renamingPath: path });
       },
 
       templatePicker: null,
       setTemplatePicker: (mode) => set({ templatePicker: mode }),
       notesSettingsOpen: false,
       notesSettingsFolder: null,
-      templatePromptPath: null,
       setNotesSettings: (open, folder = null) => set({
         notesSettingsOpen: open,
         notesSettingsFolder: open ? (folder ?? null) : null,
