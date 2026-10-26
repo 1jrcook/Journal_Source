@@ -174,6 +174,172 @@
     width: 0;
     background: var(--gold);
   }
+  #plain mark { color: inherit; border-radius: 2px; }
+  #plain mark[data-book="yellow"] { background: rgba(230, 195, 92, .38); }
+  #plain mark[data-book="green"] { background: rgba(125, 206, 160, .38); }
+  #plain mark[data-book="blue"] { background: rgba(126, 182, 255, .38); }
+  #plain mark[data-book="pink"] { background: rgba(245, 163, 199, .38); }
+  #plain mark[data-book="orange"] { background: rgba(240, 160, 90, .4); }
+  #book-menu {
+    position: fixed;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: color-mix(in srgb, var(--bg-2) 94%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--line-2);
+    border-radius: 999px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .35);
+    color: var(--text);
+    max-width: calc(100vw - 16px);
+    touch-action: manipulation;
+    user-select: none;
+  }
+  #book-menu[hidden] { display: none !important; }
+  #book-menu.noting {
+    flex-direction: column;
+    align-items: stretch;
+    border-radius: 16px;
+    width: min(340px, calc(100vw - 20px));
+    padding: 12px;
+  }
+  #book-menu button {
+    font: 500 12.5px/1.2 var(--sans);
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    padding: 4px 8px;
+    min-height: 0;
+  }
+  #book-menu button:hover, #book-menu button:focus-visible { color: var(--text); background: var(--gold-dim); border-color: transparent; }
+  .book-swatches { display: flex; align-items: center; gap: 6px; flex: none; }
+  #book-menu .book-swatches button {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid color-mix(in srgb, var(--text) 28%, transparent);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12);
+  }
+  #book-menu .book-swatches button.on { outline: 2px solid var(--text); outline-offset: 2px; }
+  .book-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .book-menu-btn svg { flex: none; }
+  .book-menu-btn.danger, #book-menu .book-menu-row button.danger { color: #e07070; }
+  .book-menu-btn.dismiss { font-size: 16px; line-height: 1; padding: 2px 6px; }
+  .book-menu-sep { width: 1px; height: 16px; background: var(--line-2); margin: 0 2px; flex: none; }
+  .book-noting-box { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+  .book-note-quote {
+    font-size: 12px;
+    font-style: italic;
+    color: var(--muted);
+    margin: 0;
+    line-height: 1.4;
+    border-left: 2px solid var(--gold);
+    padding-left: 8px;
+    max-height: 3.6em;
+    overflow: hidden;
+  }
+  #book-menu textarea {
+    width: 100%;
+    min-height: 80px;
+    resize: vertical;
+    cursor: text;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    padding: 10px;
+    font: 16px/1.4 var(--sans);
+  }
+  .book-menu-row { display: flex; justify-content: flex-end; gap: 10px; }
+  #book-menu .book-menu-row button { font-size: 13px; padding: 6px 12px; }
+  #book-menu .book-menu-row button.primary { background: var(--gold); color: #1c1916; font-weight: 650; }
+  #lookup {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgba(6, 5, 4, .62);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity .22s;
+  }
+  #lookup[hidden] { display: none !important; }
+  #lookup.in { opacity: 1; }
+  #lookup .gk-dlg {
+    width: min(860px, 96vw);
+    height: min(820px, 92vh);
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+    border-radius: 18px;
+    box-shadow: 0 30px 90px rgba(0, 0, 0, .55);
+    display: grid;
+    grid-template-rows: auto 1fr;
+    overflow: hidden;
+  }
+  #lookup .gk-hd { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  #lookup .gk-mode-badge {
+    flex: none;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--gold-dim);
+    color: var(--gold);
+    border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  }
+  #lookup h2 {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font: 700 19px/1.25 var(--serif);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #lookup .gk-x { border: 0; background: transparent; color: var(--muted); font-size: 22px; line-height: 1; padding: 4px 8px; min-height: 0; border-radius: 8px; }
+  #lookup .gk-body { overflow: auto; padding: 18px 28px 48px; min-width: 0; }
+  #lookup .gk-body p, #lookup .gk-status { font: 16.5px/1.65 var(--serif); margin: 0 0 1em; }
+  #lookup .gk-body h2, #lookup .gk-body h3, #lookup .gk-body h4 { font-family: var(--serif); margin: 1.3em 0 .4em; line-height: 1.25; }
+  #lookup .gk-body h2 { font-size: 1.45em; border-bottom: 1px solid var(--line); padding-bottom: .2em; }
+  #lookup .gk-body a.gk-link { color: var(--gold); cursor: pointer; }
+  #lookup .gk-body ul, #lookup .gk-body ol { margin: 0 0 1em; padding-left: 1.3em; }
+  #lookup .dict-results { display: flex; flex-direction: column; gap: 20px; }
+  #lookup .dict-entry { padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+  #lookup .dict-entry:last-child { border-bottom: 0; padding-bottom: 0; }
+  #lookup .dict-source-tag { font-size: 11.5px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; }
+  #lookup .dict-def { font: 16px/1.65 var(--serif); white-space: pre-wrap; margin: 0; }
+  #toast {
+    position: fixed;
+    z-index: 40;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: var(--bg-2);
+    border: 1px solid var(--line-2);
+    color: var(--text);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  #toast.on { opacity: 1; }
   @media (max-width: 640px) {
     h1 { font-size: 18px; }
     header { padding: 10px 12px 0; }
@@ -183,12 +349,23 @@
     #plain { padding: 4px 16px 24px; }
     #plain article { font-size: 17px; }
     #chapters { width: 100%; }
+    #book-menu { border-radius: 14px; flex-wrap: wrap; justify-content: center; padding: 8px 10px; }
+    #book-menu .book-swatches button { width: 26px; height: 26px; }
+    #book-menu.noting {
+      bottom: 12px !important;
+      top: auto !important;
+      left: 50% !important;
+      transform: translateX(-50%) !important;
+      width: calc(100vw - 20px) !important;
+      max-width: 400px;
+      border-radius: 18px;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     #progress i { transition: none; }
   }
 </style>
-<script src="/book-reader.js?v=2"></script>
+<script src="/book-reader.js?v=3"></script>
 </head>
 <body>
   <header>
@@ -211,5 +388,17 @@
     <div id="plain" hidden><article id="plain-body"></article></div>
   </div>
   <div id="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Reading progress" tabindex="0"><i id="progress-bar"></i></div>
+  <div id="book-menu" class="book-menu" hidden></div>
+  <div id="lookup" class="gk-back" hidden>
+    <div class="gk-dlg" role="dialog" aria-modal="true" aria-labelledby="lookup-title">
+      <header class="gk-hd">
+        <span class="gk-mode-badge" id="lookup-badge">Dictionary</span>
+        <h2 id="lookup-title"></h2>
+        <button type="button" class="gk-x" id="lookup-x" aria-label="Close">×</button>
+      </header>
+      <div class="gk-body" id="lookup-body"></div>
+    </div>
+  </div>
+  <p id="toast" role="status"></p>
 </body>
 </html>
