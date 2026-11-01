@@ -435,14 +435,47 @@
       else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); go(1); }
     }
 
+    var TAP_EDGE = 0.15;
+
+    function textSelected(sel) {
+      return !!(sel && !sel.isCollapsed && String(sel.toString() || '').trim());
+    }
+
+    // The iframe is as wide as the chapter. clientX is from that iframe, not
+    // from the page on screen, so the edge is measured against the clip.
+    function tapFraction(doc, clientX, clientY) {
+      var frame = doc.defaultView && doc.defaultView.frameElement;
+      var viewEl = frame && frame.parentElement;
+      var container = viewEl && viewEl.parentElement;
+      if (!frame || !container || !container.getBoundingClientRect) {
+        var w0 = (doc.documentElement && doc.documentElement.clientWidth) || window.innerWidth || 1;
+        return clientX / w0;
+      }
+      var frameRect = frame.getBoundingClientRect();
+      var clipRect = container.getBoundingClientRect();
+      var vertical = !!(container.parentElement && container.parentElement.classList.contains('vertical'));
+      if (vertical) {
+        var h = clipRect.height || 1;
+        return (clientY - (clipRect.top - frameRect.top)) / h;
+      }
+      var w = clipRect.width || 1;
+      return (clientX - (clipRect.left - frameRect.left)) / w;
+    }
+
     function bindDoc(doc, index) {
       if (!doc || (bound && bound.has(doc))) return;
       if (bound) bound.add(doc);
       var dismissClick = false;
+      var hadSelection = false;
+      var touchHadSelection = false;
       var selTimer = 0;
       doc.addEventListener('keydown', onKey, true);
+      doc.addEventListener('touchstart', function () {
+        touchHadSelection = textSelected(doc.getSelection && doc.getSelection());
+      }, true);
       doc.addEventListener('mousedown', function (e) {
         if (e.button !== 0) return;
+        hadSelection = textSelected(doc.getSelection && doc.getSelection());
         if (menu || lookupOpen()) { dismissClick = true; closeMenu(); }
       }, true);
       doc.addEventListener('mouseup', function (e) {
@@ -467,14 +500,18 @@
       doc.addEventListener('click', function (e) {
         if (e.button !== 0) return;
         if (dismissClick) { dismissClick = false; e.preventDefault(); return; }
+        if (hadSelection || touchHadSelection) {
+          hadSelection = false;
+          touchHadSelection = false;
+          return;
+        }
         var sel = doc.getSelection && doc.getSelection();
-        if (sel && String(sel.toString() || '').trim()) return;
+        if (textSelected(sel)) return;
         var t = e.target;
         if (t && t.closest && t.closest('a[href], button, input, textarea')) return;
-        var x = e.clientX;
-        var w = doc.documentElement.clientWidth || window.innerWidth;
-        if (x >= w * 0.25 && x <= w * 0.75) return;
-        var dir = x < w * 0.25 ? -1 : 1;
+        var frac = tapFraction(doc, e.clientX, e.clientY);
+        if (!(frac < TAP_EDGE || frac > 1 - TAP_EDGE)) return;
+        var dir = frac < TAP_EDGE ? -1 : 1;
         setTimeout(function () {
           if (menu || lookupOpen()) return;
           go(dir);

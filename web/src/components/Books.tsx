@@ -84,6 +84,39 @@ const FONT_STACKS: Record<string, string> = {
   dyslexia: 'OpenDyslexic, "Comic Sans MS", Verdana, sans-serif',
 };
 
+/** Outer fraction of the visible page that turns. The middle is a plain click. */
+const TAP_EDGE = 0.15;
+
+function textSelected(sel: Selection | null): boolean {
+  return !!(sel && !sel.isCollapsed && (sel.toString() || '').trim());
+}
+
+/** Foliate's iframe is as wide as the chapter and the container scrolls it,
+ *  so clientX is not a position on the page that is on screen. */
+function visibleTapFraction(doc: Document, clientX: number, clientY: number): number {
+  const frame = doc.defaultView?.frameElement as HTMLElement | null;
+  const container = frame?.parentElement?.parentElement;
+  if (!frame || !container) {
+    const w = doc.documentElement.clientWidth || window.innerWidth || 1;
+    return clientX / w;
+  }
+  const frameRect = frame.getBoundingClientRect();
+  const clipRect = container.getBoundingClientRect();
+  const vertical = container.parentElement?.classList.contains('vertical') ?? false;
+  if (vertical) {
+    const h = clipRect.height || 1;
+    return (clientY - (clipRect.top - frameRect.top)) / h;
+  }
+  const w = clipRect.width || 1;
+  return (clientX - (clipRect.left - frameRect.left)) / w;
+}
+
+function elementTapFraction(el: HTMLElement, clientX: number): number {
+  const rect = el.getBoundingClientRect();
+  const w = rect.width || el.clientWidth || 1;
+  return (clientX - rect.left) / w;
+}
+
 type FoliateView = HTMLElement & {
   open: (file: File) => Promise<void>;
   init: (opts: { lastLocation?: string; showTextStart?: boolean }) => Promise<void>;
@@ -563,6 +596,7 @@ export default function Books() {
   const [fill, setFill] = useState(false);
   const [full, setFull] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const sheetClearRef = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const folderRef = useRef('');
   const colorRef = useRef<Map<string, string>>(new Map());
@@ -1111,8 +1145,10 @@ export default function Books() {
         let recentTouchTap = 0;
         let selTimer = 0;
 
+        let clearSelectionClick = false;
         const onDocDown = (e: MouseEvent | TouchEvent) => {
           if ('button' in e && e.button !== 0) return;
+          if (!('touches' in e)) clearSelectionClick = textSelected(doc.getSelection());
           if (menuOpenRef.current) {
             dismissClick = true;
             setMenu(null);
@@ -1143,20 +1179,18 @@ export default function Books() {
           return true;
         };
 
-        const handleTap = (clientX: number) => {
+        const handleTap = (clientX: number, clientY: number) => {
           if (!prefsRef.current.tapZones) return;
-          const w = doc.documentElement.clientWidth || window.innerWidth;
-          if (clientX < w * 0.32) {
-            view.goLeft();
-          } else if (clientX > w * 0.68) {
-            view.goRight();
-          } else {
-            setFocused((f) => !f);
-          }
+          const frac = visibleTapFraction(doc, clientX, clientY);
+          if (frac < TAP_EDGE) view.goLeft();
+          else if (frac > 1 - TAP_EDGE) view.goRight();
+          else setFocused((f) => !f);
         };
 
+        let touchStartedOnSelection = false;
         const onDocTouchStart = (e: TouchEvent) => {
           onDocDown(e);
+          touchStartedOnSelection = textSelected(doc.getSelection());
           if (e.touches.length !== 1) {
             isTouchDrag = true;
             return;
@@ -1179,7 +1213,10 @@ export default function Books() {
 
         const onDocTouchEnd = (e: TouchEvent) => {
           const dt = Date.now() - touchStartTime;
-          if (isTouchDrag || dt > 450) {
+          const startedOnSelection = touchStartedOnSelection;
+          touchStartedOnSelection = false;
+          if (isTouchDrag || dt > 450 || startedOnSelection) {
+            if (startedOnSelection) recentTouchTap = Date.now();
             window.setTimeout(() => checkSelection(), 60);
             return;
           }
@@ -1193,7 +1230,12 @@ export default function Books() {
           const target = doc.elementFromPoint(t.clientX, t.clientY) as HTMLElement | null;
           if (target?.closest?.('a[href], button, input, textarea, select')) return;
           recentTouchTap = Date.now();
-          handleTap(t.clientX);
+          const x = t.clientX;
+          const y = t.clientY;
+          window.setTimeout(() => {
+            if (menuOpenRef.current || lookupOpenRef.current) return;
+            handleTap(x, y);
+          }, 0);
         };
 
         doc.addEventListener('mousedown', onDocDown, true);
@@ -1222,14 +1264,21 @@ export default function Books() {
           if (Date.now() - recentTouchTap < 400) return;
           const wasDismiss = dismissClick;
           dismissClick = false;
+          const clearing = clearSelectionClick;
+          clearSelectionClick = false;
           const t = e.target as HTMLElement | null;
           if (t?.closest?.('a[href]')) {
             if (wasDismiss) e.preventDefault();
             return;
           }
           if (checkSelection(e.clientX, e.clientY)) return;
-          if (wasDismiss) return;
-          handleTap((e as MouseEvent).clientX);
+          if (wasDismiss || clearing) return;
+          const x = (e as MouseEvent).clientX;
+          const y = (e as MouseEvent).clientY;
+          window.setTimeout(() => {
+            if (menuOpenRef.current || lookupOpenRef.current) return;
+            handleTap(x, y);
+          }, 0);
         });
         doc.addEventListener('keydown', (e) => {
           if (e.key === 'Escape') {
@@ -1761,17 +1810,21 @@ export default function Books() {
             className="books-sheet"
             ref={sheetRef}
             onScroll={onSheetScroll}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              sheetClearRef.current = textSelected(document.getSelection()) || menuOpenRef.current;
+            }}
             onClick={(e) => {
               if (!prefs.tapZones) return;
-              const sel = document.getSelection();
-              if (sel && sel.toString().trim().length >= 2) return;
+              if (sheetClearRef.current) { sheetClearRef.current = false; return; }
+              if (textSelected(document.getSelection())) return;
               const el = sheetRef.current;
               if (!el) return;
-              const w = el.clientWidth || window.innerWidth;
+              const frac = elementTapFraction(el, e.clientX);
               const pageH = Math.max(120, el.clientHeight * 0.85);
-              if (e.clientX < w * 0.32) {
+              if (frac < TAP_EDGE) {
                 el.scrollBy({ top: -pageH, behavior: 'smooth' });
-              } else if (e.clientX > w * 0.68) {
+              } else if (frac > 1 - TAP_EDGE) {
                 el.scrollBy({ top: pageH, behavior: 'smooth' });
               } else {
                 setFocused((f) => !f);
