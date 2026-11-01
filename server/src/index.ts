@@ -323,7 +323,7 @@ async function main() {
         const rel = path.relative(publicDir, filePath).split(path.sep).join('/');
         if (rel.startsWith('assets/')) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         else if (rel.startsWith('foliate/')) res.setHeader('Cache-Control', 'public, max-age=604800');
-        else if (rel === 'index.html') res.setHeader('Cache-Control', 'no-cache');
+        else if (rel === 'index.html' || rel === 'book-reader.html' || rel === 'book-reader.js') res.setHeader('Cache-Control', 'no-cache');
       },
     }));
     app.get('*', (req, res, next) => {
