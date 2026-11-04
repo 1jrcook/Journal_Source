@@ -98,8 +98,8 @@ async function main() {
           workerSrc: ["'self'", 'blob:'],
           baseUri: ["'self'"],
           formAction: ["'self'"],
-          // Phone shell iframes Mind. 'none' is ERR_BLOCKED_BY_RESPONSE.
-          frameAncestors: ["'self'", "https://chat.jrcookgroup.com"],
+          // Phone shell and Digest lightbox iframe Mind / book-reader. 'none' is ERR_BLOCKED_BY_RESPONSE.
+          frameAncestors: ["'self'", "https://chat.jrcookgroup.com", "https://digests.jrcookgroup.com"],
           upgradeInsecureRequests: null,
         },
       },
