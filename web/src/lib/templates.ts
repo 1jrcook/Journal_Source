@@ -253,7 +253,7 @@ export function templateForNewNote(settings: TemplateSettings, dir: string): str
 
 async function readJson(path: string): Promise<Record<string, unknown> | null> {
   try {
-    const r = await api.read(path);
+    const r = await api.read(path, { exact: true });
     const text = typeof r === 'string' ? r : r.content;
     const parsed = JSON.parse(text);
     return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
@@ -270,7 +270,22 @@ function str(v: unknown): string {
   return typeof v === 'string' ? v.trim() : '';
 }
 
-export async function loadTemplateSettings(tree: TreeNode | null): Promise<TemplateSettings> {
+let cachedSettings: TemplateSettings | null = null;
+let inflightSettings: Promise<TemplateSettings> | null = null;
+
+function cloneSettings(s: TemplateSettings): TemplateSettings {
+  const periodic = blankPeriodic();
+  for (const id of PERIODS) {
+    periodic[id] = { ...s.periodic[id] };
+  }
+  return {
+    ...s,
+    periodic,
+    folderTemplates: s.folderTemplates.map((r) => ({ ...r })),
+  };
+}
+
+async function fetchTemplateSettings(tree: TreeNode | null): Promise<TemplateSettings> {
   const periodic = blankPeriodic();
   const settings: TemplateSettings = {
     folder: guessTemplateFolder(tree),
@@ -282,21 +297,52 @@ export async function loadTemplateSettings(tree: TreeNode | null): Promise<Templ
     periodic,
     folderTemplates: [],
   };
-  const tpl = await readJson('.obsidian/templates.json');
+  const [tpl, periodicFile, daily, rules, jr] = await Promise.all([
+    readJson('.obsidian/templates.json'),
+    readJson('.obsidian/plugins/periodic-notes/data.json'),
+    readJson('.obsidian/daily-notes.json'),
+    readJson('.obsidian/folder-templates.json'),
+    readJson('.obsidian/jr-notes.json'),
+  ]);
   if (tpl) {
     if (str(tpl.folder)) settings.folder = cleanRel(tpl.folder);
     if (str(tpl.dateFormat)) settings.dateFormat = str(tpl.dateFormat);
     if (str(tpl.timeFormat)) settings.timeFormat = str(tpl.timeFormat);
   }
-  const periodicFile = await readJson('.obsidian/plugins/periodic-notes/data.json');
   if (periodicFile) {
     for (const id of PERIODS) settings.periodic[id] = readPeriod(periodicFile[id], id);
   }
-  const daily = await readJson('.obsidian/daily-notes.json');
   if (daily) {
     if ('folder' in daily && !periodicFile) settings.periodic.daily.folder = cleanRel(daily.folder);
     if (str(daily.format) && !periodicFile) settings.periodic.daily.format = str(daily.format);
     if (str(daily.template) && !settings.periodic.daily.template) settings.periodic.daily.template = cleanRel(daily.template);
+  }
+  if ( rules && Array.isArray(rules.folders)) {
+    settings.folderTemplates = rules.folders
+      .map((row) => {
+        const r = row && typeof row === 'object' ? row as Record<string, unknown> : {};
+        return { folder: cleanRel(r.folder), template: cleanRel(r.template) };
+      })
+      .filter((r) => r.folder && r.template);
+  }
+  if (jr) {
+    if (str(jr.templateFolder)) settings.folder = cleanRel(jr.templateFolder);
+    if (str(jr.dateFormat)) settings.dateFormat = str(jr.dateFormat);
+    if (str(jr.timeFormat)) settings.timeFormat = str(jr.timeFormat);
+    if (jr.periodic && typeof jr.periodic === 'object') {
+      const block = jr.periodic as Record<string, unknown>;
+      for (const id of PERIODS) {
+        if (id in block) settings.periodic[id] = readPeriod(block[id], id);
+      }
+    }
+    if (Array.isArray(jr.folderTemplates)) {
+      settings.folderTemplates = jr.folderTemplates
+        .map((row) => {
+          const r = row && typeof row === 'object' ? row as Record<string, unknown> : {};
+          return { folder: cleanRel(r.folder), template: cleanRel(r.template) };
+        })
+        .filter((r) => r.folder && r.template);
+    }
   }
   if (!settings.periodic.daily.template) {
     try {
@@ -308,15 +354,26 @@ export async function loadTemplateSettings(tree: TreeNode | null): Promise<Templ
   settings.dailyFolder = settings.periodic.daily.folder;
   settings.dailyFormat = settings.periodic.daily.format;
   settings.dailyTemplate = settings.periodic.daily.template;
-  const rules = await readJson('.obsidian/folder-templates.json');
-  const list = rules && Array.isArray(rules.folders) ? rules.folders : [];
-  settings.folderTemplates = list
-    .map((row) => {
-      const r = row && typeof row === 'object' ? row as Record<string, unknown> : {};
-      return { folder: cleanRel(r.folder), template: cleanRel(r.template) };
-    })
-    .filter((r) => r.folder && r.template);
-  return settings;
+  cachedSettings = cloneSettings(settings);
+  return cloneSettings(settings);
+}
+
+export async function loadTemplateSettings(tree: TreeNode | null, fresh = false): Promise<TemplateSettings> {
+  if (!fresh && cachedSettings) {
+    return cloneSettings(cachedSettings);
+  }
+  if (!fresh && inflightSettings) {
+    return cloneSettings(await inflightSettings);
+  }
+  const p = fetchTemplateSettings(tree).finally(() => {
+    if (inflightSettings === p) inflightSettings = null;
+  });
+  inflightSettings = p;
+  return cloneSettings(await p);
+}
+
+export function refreshTemplateSettings(tree: TreeNode | null): void {
+  void loadTemplateSettings(tree, true).catch(() => {});
 }
 
 export async function rememberDailyTemplate(path: string, settings: TemplateSettings): Promise<void> {
@@ -338,6 +395,11 @@ export async function rememberDailyTemplate(path: string, settings: TemplateSett
     format: daily.format,
     template: path,
   });
+  if (cachedSettings) {
+    cachedSettings.periodic.daily.template = path;
+    cachedSettings.periodic.daily.enabled = true;
+    cachedSettings.dailyTemplate = path;
+  }
 }
 
 export type Period = PeriodId;
@@ -355,14 +417,17 @@ export async function saveNoteSettings(settings: TemplateSettings): Promise<void
   });
   const prevPeriodic = (await readJson('.obsidian/plugins/periodic-notes/data.json')) ?? {};
   const nextPeriodic: Record<string, unknown> = { ...prevPeriodic };
+  const cleanPeriodic: Record<string, unknown> = {};
   for (const id of PERIODS) {
     const p = settings.periodic[id];
-    nextPeriodic[id] = {
+    const row = {
       enabled: !!p?.enabled,
       folder: cleanRel(p?.folder),
       format: (p?.format || '').trim() || DEFAULT_PERIOD_FORMAT[id],
       template: cleanRel(p?.template),
     };
+    nextPeriodic[id] = row;
+    cleanPeriodic[id] = row;
   }
   await writeJson('.obsidian/plugins/periodic-notes/data.json', nextPeriodic);
   const daily = settings.periodic.daily;
@@ -371,11 +436,20 @@ export async function saveNoteSettings(settings: TemplateSettings): Promise<void
     format: (daily?.format || '').trim() || DEFAULT_PERIOD_FORMAT.daily,
     template: cleanRel(daily?.template),
   });
+  const cleanRules = settings.folderTemplates
+    .map((row) => ({ folder: cleanRel(row.folder), template: cleanRel(row.template) }))
+    .filter((row) => row.folder && row.template);
   await writeJson('.obsidian/folder-templates.json', {
-    folders: settings.folderTemplates
-      .map((row) => ({ folder: cleanRel(row.folder), template: cleanRel(row.template) }))
-      .filter((row) => row.folder && row.template),
+    folders: cleanRules,
   });
+  await writeJson('.obsidian/jr-notes.json', {
+    templateFolder: cleanRel(settings.folder),
+    dateFormat: settings.dateFormat || 'YYYY-MM-DD',
+    timeFormat: settings.timeFormat || 'HH:mm',
+    periodic: cleanPeriodic,
+    folderTemplates: cleanRules,
+  });
+  cachedSettings = cloneSettings(settings);
 }
 
 export async function setFolderTemplate(folder: string, template: string | null): Promise<void> {
@@ -391,4 +465,7 @@ export async function setFolderTemplate(folder: string, template: string | null)
   if (template) folders.push({ folder: clean, template: template.replace(/^\/+|\/+$/g, '') });
   folders.sort((a, b) => a.folder.localeCompare(b.folder));
   await writeJson('.obsidian/folder-templates.json', { folders });
+  if (cachedSettings) {
+    cachedSettings.folderTemplates = folders.map((r) => ({ ...r }));
+  }
 }

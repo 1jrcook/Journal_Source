@@ -35,6 +35,7 @@ export default function Ribbon() {
   const setPalette = useStore((s) => s.setPalette);
   const openPeriodic = useStore((s) => s.openPeriodic);
   const openContextMenu = useStore((s) => s.openContextMenu);
+  const closeContextMenu = useStore((s) => s.closeContextMenu);
   const setNotesSettings = useStore((s) => s.setNotesSettings);
   const notify = useStore((s) => s.notify);
   const loadTree = useStore((s) => s.loadTree);
@@ -130,7 +131,7 @@ export default function Ribbon() {
   const openMainMenu = (x: number, y: number) => {
     const entries: ContextMenuItem[] = items().map((item) => (
       item.id === 'periodic'
-        ? { label: 'Periodic notes', icon: 'calendar', submenu: periodItems() }
+        ? { label: 'Periodic notes', icon: 'calendar', onClick: item.run, submenu: periodItems() }
         : { label: item.title, icon: item.icon, onClick: item.run }
     ));
     entries.push(
@@ -172,10 +173,14 @@ export default function Ribbon() {
   const button = (item: RibbonItem) => (
     <button
       key={item.id}
+      type="button"
       className={item.active ? 'active' : ''}
       title={item.title}
       disabled={item.disabled}
-      onClick={() => item.run()}
+      onClick={() => {
+        closeContextMenu();
+        item.run();
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();

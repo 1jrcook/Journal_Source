@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/error.js';
 import { requireAuth } from '../middleware/auth.js';
 import { notesConfigView, saveNotesConfig } from '../services/notesconfig.js';
+import { broadcast } from '../services/realtime.js';
 
 export const notesConfigRouter = Router();
 notesConfigRouter.use(requireAuth);
@@ -19,6 +20,7 @@ notesConfigRouter.put(
   asyncHandler(async (req, res) => {
     const saved = await saveNotesConfig(req.body ?? {});
     const view = await notesConfigView();
+    broadcast({ type: 'notes-config' });
     res.json({ ...view, ...saved, folders: view.folders, templates: view.templates });
   }),
 );

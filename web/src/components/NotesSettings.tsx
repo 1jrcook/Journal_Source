@@ -27,7 +27,7 @@ export default function NotesSettings() {
   useEffect(() => {
     if (!open) return;
     let cancel = false;
-    loadTemplateSettings(tree).then((s) => {
+    loadTemplateSettings(tree, true).then((s) => {
       if (cancel) return;
       const next: TemplateSettings = {
         ...s,

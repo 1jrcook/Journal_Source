@@ -47,9 +47,15 @@ filesRouter.get(
     }
     // Obsidian-style resolution: if the exact path doesn't exist (e.g. an embed
     // `![[image.jpg]]` that lives in Attachments/), resolve it by basename.
+    const exact = req.query.exact === '1';
     if (!(await vault.exists(rel))) {
-      const resolved = resolveFile(rel);
-      if (resolved) rel = resolved;
+      const resolved = exact ? undefined : resolveFile(rel);
+      if (resolved && (await vault.exists(resolved))) {
+        rel = resolved;
+      } else {
+        res.status(404).json({ error: 'File not found' });
+        return;
+      }
     }
     if (vault.isTextFile(rel)) {
       res.json({ path: rel, content: await vault.readFileText(rel), encoding: 'utf8' });

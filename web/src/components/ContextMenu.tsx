@@ -16,12 +16,15 @@ function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose: () =>
             onMouseEnter={() => setOpenSub(it.submenu ? i : null)}
             onMouseDown={(e) => e.preventDefault()}
             onClick={(e) => {
+              if (it.onClick) {
+                it.onClick();
+                if (!it.keepOpen) onClose();
+                return;
+              }
               if (it.submenu) {
                 e.stopPropagation();
                 return;
               }
-              it.onClick?.();
-              if (!it.keepOpen) onClose();
             }}
           >
             {it.icon && <Icon name={it.icon} size={15} />}

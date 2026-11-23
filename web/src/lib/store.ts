@@ -624,6 +624,7 @@ export const useStore = create<AppState>()(
       },
 
       createNote: async (path, body, opts) => {
+        if (get().dirty) await get().save();
         let text = body ?? '';
         const stamp = opts?.stamp !== false && /\.(md|markdown)$/i.test(path);
         if (stamp) {
@@ -633,8 +634,23 @@ export const useStore = create<AppState>()(
           text = setFrontmatterFields(text, fields);
         }
         await api.write(path, text);
+        const title = path.split('/').pop() ?? path;
+        set((s) => {
+          const already = s.tabs.some((t) => t.path === path);
+          let tabs = s.tabs;
+          if (!already) {
+            const spawn = opts?.newTab || !s.activePath;
+            const idx = s.tabs.findIndex((t) => t.path === s.activePath);
+            if (spawn || idx < 0) tabs = [...s.tabs, { path, title }];
+            else {
+              tabs = s.tabs.slice();
+              tabs[idx] = { path, title };
+            }
+          }
+          const recent = [path, ...s.recent.filter((p) => p !== path)].slice(0, 20);
+          return { tabs, activePath: path, content: text, dirty: false, recent, ...pushHistory(s, path) };
+        });
         await get().loadTree();
-        await get().openFile(path, { newTab: !!opts?.newTab });
       },
 
       newNote: async (dir) => {
@@ -816,9 +832,32 @@ export const useStore = create<AppState>()(
         }
         const path = periodicNotePath(settings, period);
         const title = (path.split('/').pop() ?? path).replace(/\.md$/i, '');
-        try {
-          await api.read(path);
+        const inTree = findNode(get().tree, path)?.type === 'file';
+        if (inTree) {
           await get().openFile(path);
+          if (templatePath) get().notify(`That ${label.toLowerCase()} note is already there`);
+          return;
+        }
+        try {
+          const r = await api.read(path, { exact: true });
+          const existingContent = typeof r === 'string' ? r : r.content;
+          if (get().dirty) await get().save();
+          const fileTitle = path.split('/').pop() ?? path;
+          set((s) => {
+            const already = s.tabs.some((t) => t.path === path);
+            let tabs = s.tabs;
+            if (!already) {
+              const spawn = !s.activePath;
+              const idx = s.tabs.findIndex((t) => t.path === s.activePath);
+              if (spawn || idx < 0) tabs = [...s.tabs, { path, title: fileTitle }];
+              else {
+                tabs = s.tabs.slice();
+                tabs[idx] = { path, title: fileTitle };
+              }
+            }
+            const recent = [path, ...s.recent.filter((p) => p !== path)].slice(0, 20);
+            return { tabs, activePath: path, content: existingContent, dirty: false, recent, ...pushHistory(s, path) };
+          });
           if (templatePath) get().notify(`That ${label.toLowerCase()} note is already there`);
           return;
         } catch {
@@ -828,7 +867,7 @@ export const useStore = create<AppState>()(
         const chosen = (period === 'daily' ? templatePath : '') || spec.template;
         if (chosen) {
           try {
-            const r = await api.read(chosen);
+            const r = await api.read(chosen, { exact: true });
             const raw = typeof r === 'string' ? r : r.content;
             body = expandTemplate(raw, {
               title,

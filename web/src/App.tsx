@@ -22,6 +22,7 @@ import { initUrlSync } from './lib/urlsync';
 import { useIsMobile } from './lib/useIsMobile';
 import { applyJrPack, inJrPane, markJrPane, repaintJr, type JrPack } from './lib/jrTheme';
 import { insertJrStamp } from './lib/stamp';
+import { refreshTemplateSettings } from './lib/templates';
 
 export default function App() {
   const authed = useStore((s) => s.authed);
@@ -66,7 +67,9 @@ export default function App() {
     if (location.pathname === '/books' || location.pathname.startsWith('/books/')) {
       useStore.getState().setBooksOpen(true);
     }
-    loadTree();
+    loadTree().then(() => {
+      refreshTemplateSettings(useStore.getState().tree);
+    });
     // Deep link (/note/<path>) wins over the restored workspace's active note.
     const deepLink = initUrlSync();
     useStore
@@ -91,6 +94,8 @@ export default function App() {
           // coalesce bursts of fs events into a single tree refresh
           window.clearTimeout(treeTimer);
           treeTimer = window.setTimeout(() => loadTree(), 800);
+        } else if (msg.type === 'notes-config') {
+          refreshTemplateSettings(useStore.getState().tree);
         } else if (msg.type === 'uistate') {
           // another tab/device changed the workspace → sync live
           useStore.getState().applyRemoteState(msg.state, msg.originId);
