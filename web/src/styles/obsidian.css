@@ -714,6 +714,21 @@ input.cm-inline-title {
 /* List indentation guides (one per indent unit) — same mechanism as Obsidian:
    absolutely positioned 1px rule spanning the full line height, offset 0.85em. */
 .cm-s-obsidian .cm-line { position: relative; }
+.cm-s-obsidian .cm-line.HyperMD-list-line {
+  padding-left: var(--list-indent, 0px);
+  text-indent: calc(-1 * var(--list-indent, 0px));
+}
+.cm-s-obsidian .cm-line.HyperMD-list-line * { text-indent: 0; }
+.cm-s-obsidian .cm-line.cm-blockquote.HyperMD-list-line,
+.cm-s-obsidian .cm-line.cm-callout-line.HyperMD-list-line {
+  padding-left: calc(24px + var(--list-indent, 0px));
+}
+.cm-s-obsidian .cm-line.cm-blockquote[data-quote-depth="2"].HyperMD-list-line {
+  padding-left: calc(48px + var(--list-indent, 0px));
+}
+.cm-s-obsidian .cm-line.cm-blockquote[data-quote-depth="3"].HyperMD-list-line {
+  padding-left: calc(72px + var(--list-indent, 0px));
+}
 .cm-s-obsidian .cm-indent { display: inline-block; }
 .cm-s-obsidian .cm-indent::before {
   content: '\200B'; display: block; width: 1px; color: transparent;

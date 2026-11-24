@@ -2234,23 +2234,37 @@ function buildDecorations(view: EditorView): DecorationSet {
       const body = bodyStart ? text.slice(bodyStart) : text;
       const bodyFrom = line.from + bodyStart;
       // Indentation guides for nested lists (one cm-indent per tab / 4-space unit).
-      const indentGuides = (ws: string) => {
+      const indentGuides = (ws: string): number => {
         let i = 0;
+        let totalCols = 0;
         while (i < ws.length) {
           const end = Math.min(i + (ws[i] === '\t' ? 1 : 4), ws.length);
-          all.push(Decoration.mark({ class: 'cm-indent' }).range(bodyFrom + i, bodyFrom + end));
+          const chunk = ws.slice(i, end);
+          let cols = 0;
+          for (let c = 0; c < chunk.length; c++) cols += chunk[c] === '\t' ? 4 : 1;
+          totalCols += cols;
+          all.push(
+            Decoration.mark({
+              class: 'cm-indent',
+              attributes: { style: `width: ${cols * 0.5}em` },
+            }).range(bodyFrom + i, bodyFrom + end),
+          );
           i = end;
         }
+        return totalCols;
       };
       const task = body.match(/^(\s*)([-*+])\s+\[(.)\]\s/);
       if (task) {
+        const cols = indentGuides(task[1]);
         all.push(
           Decoration.line({
             class: 'HyperMD-list-line HyperMD-task-line',
-            attributes: { 'data-task': task[3] },
+            attributes: {
+              'data-task': task[3],
+              style: `--list-indent: calc(${(cols * 0.5 + 1).toFixed(2)}em + 6px)`,
+            },
           }).range(line.from, line.from),
         );
-        indentGuides(task[1]);
         const boxPos = bodyFrom + task[1].length + task[2].length + 2;
         if (!touches(line.from, boxPos + 2)) {
           pushReplace(bodyFrom + task[1].length, boxPos + 2, Decoration.replace({ widget: new CheckboxWidget(task[3] !== ' ', boxPos) }));
@@ -2258,26 +2272,45 @@ function buildDecorations(view: EditorView): DecorationSet {
       } else {
         const bullet = body.match(/^(\s*)([-*+])(\s+)/);
         if (bullet) {
-          all.push(Decoration.line({ class: 'HyperMD-list-line' }).range(line.from, line.from));
-          indentGuides(bullet[1]);
-          // Replace the `-`/`*`/`+` marker with a bullet and collapse its trailing
-          // whitespace to a single space, so `-   Item` reads `• Item` like Obsidian.
+          const cols = indentGuides(bullet[1]);
+          all.push(
+            Decoration.line({
+              class: 'HyperMD-list-line',
+              attributes: { style: `--list-indent: ${(cols * 0.5 + 1.05).toFixed(2)}em` },
+            }).range(line.from, line.from),
+          );
+          // Replace the `-`/`*`/`+` marker with a bullet immediately (including on a
+          // freshly generated `- ` line) and collapse trailing whitespace to one space.
           const start = bodyFrom + bullet[1].length;
           const markerEnd = start + 1;
           const spaceEnd = markerEnd + bullet[3].length;
-          if (!touches(start, spaceEnd)) {
-            pushReplace(start, markerEnd, Decoration.replace({ widget: new BulletWidget() }));
-            if (bullet[3].length > 1) pushReplace(markerEnd + 1, spaceEnd, hidden);
+          pushReplace(start, markerEnd, Decoration.replace({ widget: new BulletWidget() }));
+          all.push(Decoration.mark({ class: 'cm-list-space' }).range(markerEnd, markerEnd + 1));
+          if (bullet[3].length > 1 && !touches(markerEnd + 1, spaceEnd)) {
+            pushReplace(markerEnd + 1, spaceEnd, hidden);
           }
         } else {
           // Ordered list: keep the `1.` but collapse extra spaces after it.
           const ol = body.match(/^(\s*)(\d{1,9}[.)])(\s+)/);
           if (ol) {
-            all.push(Decoration.line({ class: 'HyperMD-list-line' }).range(line.from, line.from));
-            indentGuides(ol[1]);
+            const cols = indentGuides(ol[1]);
+            const markerW = ol[2].length * 0.55 + 0.35;
+            all.push(
+              Decoration.line({
+                class: 'HyperMD-list-line',
+                attributes: { style: `--list-indent: ${(cols * 0.5 + markerW).toFixed(2)}em` },
+              }).range(line.from, line.from),
+            );
+            const start = bodyFrom + ol[1].length;
+            const markerEnd = start + ol[2].length;
+            const spaceEnd = markerEnd + ol[3].length;
+            all.push(
+              Decoration.mark({
+                class: 'cm-list-ol',
+                attributes: { style: `width: ${markerW.toFixed(2)}em` },
+              }).range(start, markerEnd + 1),
+            );
             if (ol[3].length > 1) {
-              const markerEnd = bodyFrom + ol[1].length + ol[2].length;
-              const spaceEnd = markerEnd + ol[3].length;
               if (!touches(bodyFrom + ol[1].length, spaceEnd)) pushReplace(markerEnd + 1, spaceEnd, hidden);
             }
           }
@@ -2850,7 +2883,9 @@ export const livePreviewTheme = EditorView.baseTheme({
     padding: '0.5px 4px',
     fontSize: 'var(--font-smaller)',
   },
-  '.cm-bullet': { color: 'var(--text-faint)' },
+  '.cm-bullet': { color: 'var(--text-faint)', display: 'inline-block', width: '0.8em', textIndent: '0' },
+  '.cm-list-space': { display: 'inline-block', width: '0.25em', textIndent: '0' },
+  '.cm-list-ol': { display: 'inline-block', textIndent: '0' },
   // Links: accent-coloured and underlined like Obsidian. `inline-block` gives the
   // browser a soft-wrap opportunity after the widget, so text glued to `]]` in the
   // source (e.g. `]]and`) can still wrap onto the next line as it does in Obsidian.
